@@ -52,7 +52,10 @@ from scripts.annotation import (
 
 )
 
-from scripts.final_table import build_final_variant_table
+from scripts.final_table import (
+    build_final_annotation_table,
+    save_final_table
+)
 
 def main():
 
@@ -259,4 +262,23 @@ final_df = build_final_variant_table(
 
     VEP_OUTPUT_FILE
 
+)
+
+
+# --------------------------------------------
+# Final publication-ready variant table
+# --------------------------------------------
+
+final_df = build_final_annotation_table(
+    hgvs_df,
+    genotype_df,
+    VEP_OUTPUT_FILE
+)
+
+save_final_table(
+    final_df,
+    os.path.join(
+        OUTPUT_FOLDER,
+        "results"
+    )
 )
