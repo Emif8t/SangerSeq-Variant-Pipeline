@@ -41,3 +41,14 @@ MIN_PHRED = 20
 FORWARD_PRIMER = "CAACACCCCTGACATTCTCG"
 
 REVERSE_PRIMER = "ACTTTCCCTTCCACTCGCTC"
+
+
+# ======================================================
+# HGVS SETTINGS
+# ======================================================
+
+TRANSCRIPT = "NM_000050.4"
+
+# Coding sequence starts at transcript position
+
+CDS_START = 357
