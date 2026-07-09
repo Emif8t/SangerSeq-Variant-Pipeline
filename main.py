@@ -236,3 +236,15 @@ save_annotation_table(
     )
 
 )
+
+if ANNOTATION_METHOD == "api":
+
+    annotation_df = annotate_variants(
+        ...
+    )
+
+else:
+
+    annotation_df = load_vep_web_output(
+        VEP_OUTPUT_FILE
+    )
