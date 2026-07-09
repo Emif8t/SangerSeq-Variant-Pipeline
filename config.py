@@ -82,3 +82,17 @@ ANNOTATION_METHOD = "web"
 
 # Used only when ANNOTATION_METHOD = "web"
 VEP_OUTPUT_FILE = "data/annotation/VEP_HGVS_OUTPUT.xlsx"
+
+# ======================================================
+# VEP OUTPUT
+# ======================================================
+
+VEP_OUTPUT_FILE = os.path.join(
+
+    DATA_FOLDER,
+
+    "annotation",
+
+    "VEP_HGVS_OUTPUT.xlsx"
+
+)
