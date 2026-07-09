@@ -44,6 +44,14 @@ from scripts.hgvs import (
 
 )
 
+from scripts.annotation import (
+
+    annotate_variants,
+
+    save_annotation_table
+
+)
+
 def main():
 
     # --------------------------------------------
@@ -195,3 +203,36 @@ save_hgvs_table(
 
 )
 
+# --------------------------------------------
+# Functional annotation
+# --------------------------------------------
+
+annotation_df = annotate_variants(
+
+    hgvs_df,
+
+    ENSEMBL_SERVER,
+
+    ENSEMBL_HEADERS,
+
+    REQUEST_TIMEOUT,
+
+    MAX_RETRIES,
+
+    REQUEST_DELAY
+
+)
+
+save_annotation_table(
+
+    annotation_df,
+
+    os.path.join(
+
+        OUTPUT_FOLDER,
+
+        "annotation"
+
+    )
+
+)
