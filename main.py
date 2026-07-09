@@ -36,6 +36,14 @@ from scripts.alignment import (
 
 )
 
+from scripts.hgvs import (
+
+    generate_hgvs_table,
+
+    save_hgvs_table
+
+)
+
 def main():
 
     # --------------------------------------------
@@ -156,3 +164,34 @@ alignment_df = walk_alignment(
     MIN_PHRED
 
 )
+
+# --------------------------------------------
+# HGVS nomenclature
+# --------------------------------------------
+
+hgvs_df = generate_hgvs_table(
+
+    summary_df,
+
+    variant_df,
+
+    TRANSCRIPT,
+
+    CDS_START
+
+)
+
+save_hgvs_table(
+
+    hgvs_df,
+
+    os.path.join(
+
+        OUTPUT_FOLDER,
+
+        "variants"
+
+    )
+
+)
+
