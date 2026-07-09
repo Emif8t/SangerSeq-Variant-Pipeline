@@ -52,6 +52,8 @@ from scripts.annotation import (
 
 )
 
+from scripts.final_table import build_final_variant_table
+
 def main():
 
     # --------------------------------------------
@@ -248,3 +250,13 @@ else:
     annotation_df = load_vep_web_output(
         VEP_OUTPUT_FILE
     )
+
+final_df = build_final_variant_table(
+
+    hgvs_df,
+
+    genotype_df,
+
+    VEP_OUTPUT_FILE
+
+)
