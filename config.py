@@ -25,8 +25,8 @@ REFSEQ_ID = "NM_000050.4"
 
 # PCR amplicon coordinates (RefSeq cDNA)
 
-AMPLICON_START = 1007
-AMPLICON_END = 1402
+#AMPLICON_START = 1007
+#AMPLICON_END = 1402
 
 # ======================================================
 # QUALITY SETTINGS
