@@ -28,6 +28,13 @@ from scripts.preprocessing import (
 
 )
 
+from scripts.alignment import (
+
+    perform_local_alignment,
+
+    walk_alignment
+
+)
 
 def main():
 
@@ -119,5 +126,33 @@ primer_information = verify_primers(
     FORWARD_PRIMER,
 
     REVERSE_PRIMER
+
+)
+
+# --------------------------------------------
+# Local sequence alignment
+# --------------------------------------------
+
+alignments = perform_local_alignment(
+
+    processed_reads,
+
+    primer_information["amplicon_sequence"]
+
+)
+
+# --------------------------------------------
+# Walk alignment
+# --------------------------------------------
+
+alignment_df = walk_alignment(
+
+    alignments,
+
+    reference_sequence,
+
+    primer_information["amplicon_start"],
+
+    MIN_PHRED
 
 )
