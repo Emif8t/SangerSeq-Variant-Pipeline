@@ -33,3 +33,11 @@ AMPLICON_END = 1402
 # ======================================================
 
 MIN_PHRED = 20
+
+# ======================================================
+# PCR PRIMERS
+# ======================================================
+
+FORWARD_PRIMER = "CAACACCCCTGACATTCTCG"
+
+REVERSE_PRIMER = "ACTTTCCCTTCCACTCGCTC"
