@@ -1,0 +1,11 @@
+data/
+    raw/
+        sample1.ab1
+        sample2.ab1
+        ...
+
+    metadata/
+        Sample_Groups.xlsx
+
+    reference/
+        NM_000050.4.fasta
