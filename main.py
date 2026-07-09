@@ -1,11 +1,73 @@
-from config import AB1_FOLDER
+"""
+main.py
 
-from scripts.preprocessing import *
+Main entry point for the SangerSeq Variant Pipeline.
+"""
 
-abi_records = load_ab1_files(AB1_FOLDER)
+from config import *
 
-processed_reads = prepare_reads(abi_records)
+from scripts.preprocessing import (
 
-qc_summary = calculate_qc_metrics(processed_reads)
+    load_ab1_files,
 
-save_qc_summary(qc_summary)
+    prepare_reads,
+
+    calculate_qc_metrics,
+
+    save_qc_summary
+
+)
+
+
+def main():
+
+    # --------------------------------------------
+    # Load ABI chromatograms
+    # --------------------------------------------
+
+    abi_records = load_ab1_files(
+
+        AB1_FOLDER
+
+    )
+
+    # --------------------------------------------
+    # Prepare sequencing reads
+    # --------------------------------------------
+
+    processed_reads = prepare_reads(
+
+        abi_records
+
+    )
+
+    # --------------------------------------------
+    # Quality-control summary
+    # --------------------------------------------
+
+    qc_summary = calculate_qc_metrics(
+
+        processed_reads
+
+    )
+
+    save_qc_summary(
+
+        qc_summary,
+
+        OUTPUT_FOLDER
+
+    )
+
+    print(
+
+        f"Pipeline completed successfully.\n"
+
+        f"Loaded {len(abi_records)} ABI chromatograms."
+
+    )
+
+
+if __name__ == "__main__":
+
+    main()
