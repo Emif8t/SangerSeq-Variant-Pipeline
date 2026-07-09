@@ -4,6 +4,16 @@ main.py
 Main entry point for the SangerSeq Variant Pipeline.
 """
 
+from scripts.reference import (
+
+    download_reference,
+
+    extract_amplicon,
+
+    verify_primers
+
+)
+
 from config import *
 
 from scripts.preprocessing import (
@@ -71,3 +81,43 @@ def main():
 if __name__ == "__main__":
 
     main()
+
+# --------------------------------------------
+# Download reference transcript
+# --------------------------------------------
+
+reference_sequence = download_reference(
+
+    REFSEQ_ID,
+
+    NCBI_EMAIL
+
+)
+
+# --------------------------------------------
+# Extract reference amplicon
+# --------------------------------------------
+
+reference_amplicon = extract_amplicon(
+
+    reference_sequence,
+
+    AMPLICON_START,
+
+    AMPLICON_END
+
+)
+
+# --------------------------------------------
+# Verify PCR primers
+# --------------------------------------------
+
+primer_information = verify_primers(
+
+    reference_sequence,
+
+    FORWARD_PRIMER,
+
+    REVERSE_PRIMER
+
+)
