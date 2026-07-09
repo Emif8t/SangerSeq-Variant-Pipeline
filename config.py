@@ -68,3 +68,17 @@ REQUEST_TIMEOUT = 30
 MAX_RETRIES = 2
 
 REQUEST_DELAY = 0.05
+
+
+# ======================================================
+# ANNOTATION SETTINGS
+# ======================================================
+
+# Annotation method:
+# "api" = query Ensembl REST API
+# "web" = import an existing VEP web output
+
+ANNOTATION_METHOD = "web"
+
+# Used only when ANNOTATION_METHOD = "web"
+VEP_OUTPUT_FILE = "data/annotation/VEP_HGVS_OUTPUT.xlsx"
