@@ -52,3 +52,19 @@ TRANSCRIPT = "NM_000050.4"
 # Coding sequence starts at transcript position
 
 CDS_START = 357
+
+# ======================================================
+# ENSEMBL VEP
+# ======================================================
+
+ENSEMBL_SERVER = "https://rest.ensembl.org"
+
+ENSEMBL_HEADERS = {
+    "Accept": "application/json"
+}
+
+REQUEST_TIMEOUT = 30
+
+MAX_RETRIES = 2
+
+REQUEST_DELAY = 0.05
