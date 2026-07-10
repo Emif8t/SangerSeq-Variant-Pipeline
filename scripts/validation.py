@@ -41,60 +41,62 @@ def generate_qc_report(
         ]
     ).sum()
 
-    report = pd.DataFrame({
+    # --------------------------------------------------
+    # QC metrics
+    # --------------------------------------------------
 
-        "Metric":[
+    metrics = {
 
-            "Total variants",
-
-            "Duplicate HGVS",
-
-            "Duplicate genomic coordinates",
-
-            "Variants with dbSNP rsID",
-
-            "Variants without dbSNP rsID",
-
-            "Missing Gene",
-
-            "Missing HGVS",
-
-            "Missing Consequence",
-
-            "Missing Impact",
-
-            "Missing Genomic Position"
-
-        ],
-
-        "Value":[
-
+        "Total variants":
             len(final_df),
 
+        "Duplicate HGVS":
             duplicate_hgvs,
 
+        "Duplicate genomic coordinates":
             duplicate_genomic,
 
+        "Variants with dbSNP rsID":
             final_df["dbSNP_ID"].notna().sum(),
 
+        "Variants without dbSNP rsID":
             final_df["dbSNP_ID"].isna().sum(),
 
+        "Missing Gene":
             final_df["Gene"].isna().sum(),
 
+        "Missing HGVS":
             final_df["HGVS_cDNA"].isna().sum(),
 
+        "Missing Consequence":
             final_df["Consequence"].isna().sum(),
 
+        "Missing Impact":
             final_df["Impact"].isna().sum(),
 
+        "Missing Genomic Position":
             final_df["Genomic_Position"].isna().sum()
 
-        ]
+    }
 
-    })
+    # --------------------------------------------------
+    # Convert to DataFrame
+    # --------------------------------------------------
 
-    return report
+    qc_report = (
 
+        pd.Series(
+            metrics,
+            name="Value"
+        )
+
+        .rename_axis("Metric")
+
+        .reset_index()
+
+    )
+
+    return qc_report
 
 # ======================================================
 # SUMMARIZE CONSEQUENCES
