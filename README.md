@@ -221,4 +221,4 @@ The pipeline was developed during doctoral research in Biochemistry investigatin
 
 PhD Candidate in Biochemistry
 
-GitHub: *(add your GitHub profile link)*
+GitHub: https://github.com/Emif8t
