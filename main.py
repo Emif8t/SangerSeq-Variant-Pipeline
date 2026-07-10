@@ -335,3 +335,57 @@ save_qc_reports(
     )
 
 )
+
+from scripts.association import (
+
+    load_sample_groups,
+
+    create_sample_sets,
+
+    run_association_analysis,
+
+    apply_multiple_testing,
+
+    save_association_results
+
+)
+
+# --------------------------------------------------
+# Association analysis
+# --------------------------------------------------
+
+phenotype_df = load_sample_groups(
+    PHENOTYPE_FILE
+)
+
+case_samples, control_samples = create_sample_sets(
+    phenotype_df
+)
+
+association_df = run_association_analysis(
+
+    final_df,
+
+    case_samples,
+
+    control_samples
+
+)
+
+association_df = apply_multiple_testing(
+    association_df
+)
+
+save_association_results(
+
+    association_df,
+
+    os.path.join(
+
+        OUTPUT_FOLDER,
+
+        "association"
+
+    )
+
+)
