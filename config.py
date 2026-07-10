@@ -96,3 +96,13 @@ VEP_OUTPUT_FILE = os.path.join(
     "VEP_HGVS_OUTPUT.xlsx"
 
 )
+
+PHENOTYPE_FILE = os.path.join(
+
+    DATA_FOLDER,
+
+    "metadata",
+
+    "Sample_Groups.xlsx"
+
+)
