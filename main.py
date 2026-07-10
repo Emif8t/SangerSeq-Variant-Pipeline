@@ -65,6 +65,15 @@ from scripts.validation import (
 
 )
 
+from scripts.hwe import (
+
+    prepare_control_genotypes,
+
+    run_hwe_analysis,
+
+    save_hwe_results
+
+)
 
 
 def main():
@@ -385,6 +394,36 @@ save_association_results(
         OUTPUT_FOLDER,
 
         "association"
+
+    )
+
+)
+
+control_df = prepare_control_genotypes(
+
+    genotype_df,
+
+    control_samples
+
+)
+
+hwe_df = run_hwe_analysis(
+
+    final_df,
+
+    control_df
+
+)
+
+save_hwe_results(
+
+    hwe_df,
+
+    os.path.join(
+
+        OUTPUT_FOLDER,
+
+        "hwe"
 
     )
 
