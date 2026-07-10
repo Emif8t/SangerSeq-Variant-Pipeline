@@ -57,6 +57,16 @@ from scripts.final_table import (
     save_final_table
 )
 
+from scripts.validation import (
+
+    run_variant_quality_control,
+
+    save_qc_reports
+
+)
+
+
+
 def main():
 
     # --------------------------------------------
@@ -281,4 +291,47 @@ save_final_table(
         OUTPUT_FOLDER,
         "results"
     )
+)
+
+
+# --------------------------------------------
+# Variant quality control
+# --------------------------------------------
+
+(
+
+    qc_report,
+
+    consequence_summary,
+
+    impact_summary,
+
+    variant_type_summary
+
+) = run_variant_quality_control(
+
+    final_df
+
+)
+
+save_qc_reports(
+
+    qc_report,
+
+    consequence_summary,
+
+    impact_summary,
+
+    variant_type_summary,
+
+    final_df,
+
+    os.path.join(
+
+        OUTPUT_FOLDER,
+
+        "qc"
+
+    )
+
 )
