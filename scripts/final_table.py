@@ -1,8 +1,12 @@
+import pandas as pd
+
+--------------------------------------------------------
+#1. load_vep_annotation()
+--------------------------------------------------------
+
 def load_vep_annotation(
-
-    vep_file
-
-):
+    vep_file: str
+) -> pd.DataFrame:
 
 vep_df = pd.read_excel(
 
@@ -12,7 +16,9 @@ vep_df = pd.read_excel(
 
 return vep_df
 
-#Function 2
+--------------------------------------------------------
+#2. prepare_vep_annotation()
+--------------------------------------------------------
 def prepare_vep_annotation(
 
     vep_df
@@ -22,7 +28,9 @@ def prepare_vep_annotation(
 return vep_df
 
 
-#Function 3
+--------------------------------------------------------
+#3. merge_variant_tables()
+--------------------------------------------------------
 def merge_variant_tables(
 
     hgvs_df,
@@ -35,107 +43,8 @@ def merge_variant_tables(
 
 return final_df
 
-
-#Function 4
-def reorder_columns(
-
-    final_df
-
-):
-
-desired_columns
-
-sort_values()
-
-return final_df
-
-
-#Function 5
-def build_final_variant_table(
-
-    hgvs_df,
-
-    genotype_df,
-
-    vep_file
-
-):
-
-vep_df = load_vep_annotation(
-
-    vep_file
-
-)
-
-vep_df = prepare_vep_annotation(
-
-    vep_df
-
-)
-
-final_df = merge_variant_tables(
-
-    hgvs_df,
-
-    genotype_df,
-
-    vep_df
-
-)
-
-final_df = split_variant_identifiers(
-    final_df
-)
-
-final_df = reorder_columns(
-
-    final_df
-
-)
-
-return final_df
-
-#Save function
-def save_final_table(
-
-    final_df,
-
-    output_folder
-
-):
-
-os.makedirs(
-
-    output_folder,
-
-    exist_ok=True
-
-)
-
-final_df.to_csv(
-
-    os.path.join(
-
-        output_folder,
-
-        "ASS1_Final_Annotated_Variants.csv"
-
-    ),
-
-    index=False
-
-)
-
-"""
-Split Existing_variation identifiers into
-dbSNP, COSMIC, ClinVar and other databases.
-"""
-
-import pandas as pd
-
-
 # ======================================================
-# SPLIT EXISTING VARIATION IDENTIFIERS
+#4. SPLIT EXISTING VARIATION IDENTIFIERS
 # ======================================================
 
 def split_variant_identifiers(
@@ -190,6 +99,8 @@ def split_variant_identifiers(
 
         "ClinVar_ID",
 
+        "HGMD_ID",
+
         "Other_ID"
 
     ]
@@ -234,29 +145,35 @@ def split_variant_identifiers(
 
         for identifier in identifiers:
 
+        identifier = identifier.strip()
+
+            # dbSNP
             if identifier.startswith("rs"):
 
                 dbsnp.append(identifier)
-
-            elif identifier.startswith("COSV"):
+            
+            # COSMIC
+            elif identifier.startswith(("COSV", "COSM")):
 
                 cosmic.append(identifier)
 
-            elif (
 
-                identifier.startswith("CM")
-
-                or
-
-                identifier.startswith("CD")
-
-            ):
+            # ClinVar
+            elif identifier.startswith(("VCV", "RCV", "CD")):
 
                 clinvar.append(identifier)
 
+    
+            # HGMD
+            elif identifier.startswith(("CM", "CI")):
+
+                other.append(identifier)
+
+            # Other databases
             else:
 
                 other.append(identifier)
+
 
         final_df.at[
 
@@ -286,6 +203,14 @@ def split_variant_identifiers(
 
             index,
 
+            "HGMD_ID"
+
+        ] = ";".join(hgmd)
+
+        final_df.at[
+
+            index,
+
             "Other_ID"
 
         ] = ";".join(other)
@@ -294,7 +219,7 @@ def split_variant_identifiers(
 
 
 # ======================================================
-# CLEAN & STANDARDIZE FINAL TABLE
+#5. CLEAN & STANDARDIZE FINAL TABLE
 # ======================================================
 
 def clean_final_table(
@@ -538,7 +463,7 @@ def clean_final_table(
 
 
 # ======================================================
-# REORDER COLUMNS
+#6. REORDER COLUMNS
 # ======================================================
 
 def reorder_columns(
@@ -550,14 +475,15 @@ def reorder_columns(
 
 
 # ======================================================
-# BUILD FINAL PUBLICATION TABLE
+#7. BUILD FINAL PUBLICATION TABLE
 # ======================================================
 
 def build_final_variant_table(
-    hgvs_df,
-    genotype_df,
-    vep_file
-):
+    hgvs_df: pd.DataFrame,
+    genotype_df: pd.DataFrame,
+    vep_file: str
+) -> pd.DataFrame:
+    
     """
     Build the final publication-ready annotated
     variant table.
@@ -612,7 +538,7 @@ def build_final_variant_table(
 
 
 # ======================================================
-# SAVE FINAL TABLE
+#8. SAVE FINAL TABLE
 # ======================================================
 
 def save_final_table(
@@ -635,3 +561,8 @@ def save_final_table(
         ),
         index=False
     )
+
+
+
+
+
