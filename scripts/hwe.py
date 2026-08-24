@@ -457,4 +457,4 @@ def save_hwe_results(
         index=False
     )
 
-    return output_file
+return output_file

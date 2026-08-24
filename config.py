@@ -3,12 +3,15 @@ Configuration file for the SangerSeq Variant Pipeline.
 
 Edit the parameters below before running the pipeline.
 """
+import os
+from pathlib import Path
 
 # ======================================================
 # INPUT / OUTPUT DIRECTORIES
 # ======================================================
 
-AB1_FOLDER = "data/raw"
+DATA_FOLDER = "data"
+AB1_FOLDER = os.path.join(DATA_FOLDER, "raw")
 OUTPUT_FOLDER = "output"
 
 # ======================================================
@@ -80,29 +83,18 @@ REQUEST_DELAY = 0.05
 
 ANNOTATION_METHOD = "web"
 
-# Used only when ANNOTATION_METHOD = "web"
-VEP_OUTPUT_FILE = "data/annotation/VEP_HGVS_OUTPUT.xlsx"
-
 # ======================================================
 # VEP OUTPUT
 # ======================================================
 
 VEP_OUTPUT_FILE = os.path.join(
-
     DATA_FOLDER,
-
     "annotation",
-
     "VEP_HGVS_OUTPUT.xlsx"
-
 )
 
 PHENOTYPE_FILE = os.path.join(
-
     DATA_FOLDER,
-
     "metadata",
-
     "Sample_Groups.xlsx"
-
 )
