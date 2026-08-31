@@ -435,11 +435,11 @@ def generate_hwe_results(
 # =========================================================
 
 def save_hwe_results(
-    hwe_df,
-    output_folder
-):
+    hwe_df: pd.DataFrame,
+    output_folder: str
+) -> str:
     """
-    Save exact HWE results as CSV.
+    Save Hardy-Weinberg equilibrium results.
     """
 
     os.makedirs(
@@ -457,4 +457,4 @@ def save_hwe_results(
         index=False
     )
 
-return output_file
+    return output_file

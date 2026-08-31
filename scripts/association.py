@@ -288,11 +288,24 @@ def sort_association_results(
 # =========================================================
 
 def save_association_results(
-    association_df,
-    output_folder
-):
+    association_df: pd.DataFrame,
+    output_folder: str
+) -> str:
     """
-    Save association analysis results as CSV.
+    Save association analysis results.
+
+    Parameters
+    ----------
+    association_df : pandas.DataFrame
+        Association analysis results.
+
+    output_folder : str
+        Directory in which to save the results.
+
+    Returns
+    -------
+    str
+        Path to the saved association results file.
     """
 
     os.makedirs(
@@ -310,4 +323,4 @@ def save_association_results(
         index=False
     )
 
-return output_file
+    return output_file

@@ -1,306 +1,530 @@
 """
 validation.py
 
-Functions for quality assessment and validation
-of the final annotated variant dataset.
+Functions for quality control and validation of the
+final annotated Sanger sequencing variant table.
 """
 
 import os
 import pandas as pd
 
 
-# ======================================================
-# GENERATE QC REPORT
-# ======================================================
+# =========================================================
+# 1. GENERATE QC REPORT
+# =========================================================
 
 def generate_qc_report(
     final_df: pd.DataFrame
 ) -> pd.DataFrame:
     """
-    Generate a quality-control report for
-    the annotated variant dataset.
+    Generate a general quality-control report for the
+    final annotated variant table.
 
-    Parameters
-    ----------
-    final_df : pandas.DataFrame
-
-    Returns
-    -------
-    pandas.DataFrame
+    The function adapts to the columns available in the
+    final table. It does not require genomic coordinates
+    if the VEP output does not provide them.
     """
 
-    duplicate_hgvs = final_df.duplicated(
-        subset="HGVS_cDNA"
-    ).sum()
+    final_df = final_df.copy()
 
-    duplicate_genomic = final_df.duplicated(
-        subset=[
-            "Chromosome",
-            "Genomic_Position",
-            "ALT"
-        ]
-    ).sum()
+    total_variants = len(final_df)
 
-    # --------------------------------------------------
-    # QC metrics
-    # --------------------------------------------------
+    # -----------------------------------------------------
+    # Determine the most appropriate variant identifier
+    # -----------------------------------------------------
 
-    metrics = {
+    if "HGVS_cDNA" in final_df.columns:
+        variant_key = ["HGVS_cDNA"]
 
-        "Total variants":
-            len(final_df),
+    elif "Transcript_Position" in final_df.columns:
+        variant_key = ["Transcript_Position", "REF", "ALT"]
 
-        "Duplicate HGVS":
-            duplicate_hgvs,
+    elif "HGVS_cDNA_Position" in final_df.columns:
+        variant_key = ["HGVS_cDNA_Position", "REF", "ALT"]
 
-        "Duplicate genomic coordinates":
-            duplicate_genomic,
+    elif "Location" in final_df.columns:
+        variant_key = ["Location", "REF", "ALT"]
 
-        "Variants with dbSNP rsID":
-            final_df["dbSNP_ID"].notna().sum(),
+    else:
+        variant_key = None
 
-        "Variants without dbSNP rsID":
-            final_df["dbSNP_ID"].isna().sum(),
+    # -----------------------------------------------------
+    # Duplicate variant detection
+    # -----------------------------------------------------
 
-        "Missing Gene":
-            final_df["Gene"].isna().sum(),
+    if variant_key:
 
-        "Missing HGVS":
-            final_df["HGVS_cDNA"].isna().sum(),
-
-        "Missing Consequence":
-            final_df["Consequence"].isna().sum(),
-
-        "Missing Impact":
-            final_df["Impact"].isna().sum(),
-
-        "Missing Genomic Position":
-            final_df["Genomic_Position"].isna().sum()
-
-    }
-
-    # --------------------------------------------------
-    # Convert to DataFrame
-    # --------------------------------------------------
-
-    qc_report = (
-
-        pd.Series(
-            metrics,
-            name="Value"
+        duplicate_variant_count = int(
+            final_df.duplicated(
+                subset=[
+                    column
+                    for column in variant_key
+                    if column in final_df.columns
+                ],
+                keep=False
+            ).sum()
         )
 
-        .rename_axis("Metric")
+    else:
 
-        .reset_index()
+        duplicate_variant_count = 0
 
-    )
+    # -----------------------------------------------------
+    # Missing annotation
+    # -----------------------------------------------------
 
-    return qc_report
+    if "Gene" in final_df.columns:
 
-# ======================================================
-# SUMMARIZE CONSEQUENCES
-# ======================================================
+        missing_gene = int(
+            final_df["Gene"]
+            .replace("", pd.NA)
+            .isna()
+            .sum()
+        )
 
-def summarize_variant_consequences(
+    else:
+
+        missing_gene = total_variants
+
+    if "Consequence" in final_df.columns:
+
+        missing_consequence = int(
+            final_df["Consequence"]
+            .replace("", pd.NA)
+            .isna()
+            .sum()
+        )
+
+    else:
+
+        missing_consequence = total_variants
+
+    if "Impact" in final_df.columns:
+
+        missing_impact = int(
+            final_df["Impact"]
+            .replace("", pd.NA)
+            .isna()
+            .sum()
+        )
+
+    elif "IMPACT" in final_df.columns:
+
+        missing_impact = int(
+            final_df["IMPACT"]
+            .replace("", pd.NA)
+            .isna()
+            .sum()
+        )
+
+    else:
+
+        missing_impact = total_variants
+
+    # -----------------------------------------------------
+    # HGVS completeness
+    # -----------------------------------------------------
+
+    if "HGVS_cDNA" in final_df.columns:
+
+        missing_hgvs = int(
+            final_df["HGVS_cDNA"]
+            .replace("", pd.NA)
+            .isna()
+            .sum()
+        )
+
+    else:
+
+        missing_hgvs = total_variants
+
+    # -----------------------------------------------------
+    # Database identifier completeness
+    # -----------------------------------------------------
+
+    if "dbSNP_ID" in final_df.columns:
+
+        variants_with_dbsnp = int(
+            (
+                final_df["dbSNP_ID"]
+                .astype(str)
+                .str.strip()
+                .replace("", pd.NA)
+                .notna()
+            ).sum()
+        )
+
+    elif "Existing_variation" in final_df.columns:
+
+        variants_with_dbsnp = int(
+            final_df["Existing_variation"]
+            .astype(str)
+            .str.contains(
+                r"\brs\d+\b",
+                regex=True,
+                na=False
+            )
+            .sum()
+        )
+
+    else:
+
+        variants_with_dbsnp = 0
+
+    # -----------------------------------------------------
+    # Genotype information
+    # -----------------------------------------------------
+
+    if "Zygosity" in final_df.columns:
+
+        zygosity_counts = (
+            final_df["Zygosity"]
+            .fillna("Unknown")
+            .value_counts()
+            .to_dict()
+        )
+
+    else:
+
+        zygosity_counts = {}
+
+    # -----------------------------------------------------
+    # Construct QC report
+    # -----------------------------------------------------
+
+    qc_rows = [
+
+        {
+            "Metric": "Total variants",
+            "Value": total_variants
+        },
+
+        {
+            "Metric": "Duplicate variant records",
+            "Value": duplicate_variant_count
+        },
+
+        {
+            "Metric": "Variants with missing Gene",
+            "Value": missing_gene
+        },
+
+        {
+            "Metric": "Variants with missing Consequence",
+            "Value": missing_consequence
+        },
+
+        {
+            "Metric": "Variants with missing Impact",
+            "Value": missing_impact
+        },
+
+        {
+            "Metric": "Variants with missing HGVS cDNA",
+            "Value": missing_hgvs
+        },
+
+        {
+            "Metric": "Variants with dbSNP identifier",
+            "Value": variants_with_dbsnp
+        }
+
+    ]
+
+    # Add zygosity information
+    for zygosity, count in zygosity_counts.items():
+
+        qc_rows.append(
+            {
+                "Metric": f"Zygosity: {zygosity}",
+                "Value": count
+            }
+        )
+
+    return pd.DataFrame(qc_rows)
+
+
+# =========================================================
+# 2. CONSEQUENCE SUMMARY
+# =========================================================
+
+def generate_consequence_summary(
     final_df: pd.DataFrame
-) -> pd.Series:
+) -> pd.DataFrame:
+    """
+    Summarise variant consequences.
+    """
 
-    return (
+    if "Consequence" not in final_df.columns:
+
+        return pd.DataFrame(
+            columns=[
+                "Consequence",
+                "Count"
+            ]
+        )
+
+    consequence_df = (
 
         final_df["Consequence"]
-
         .fillna("Unknown")
-
+        .replace("", "Unknown")
         .value_counts()
+        .rename_axis("Consequence")
+        .reset_index(name="Count")
 
     )
 
-# ======================================================
-# SUMMARIZE IMPACT
-# ======================================================
+    return consequence_df
 
-def summarize_variant_impact(
+
+# =========================================================
+# 3. IMPACT SUMMARY
+# =========================================================
+
+def generate_impact_summary(
     final_df: pd.DataFrame
-) -> pd.Series:
+) -> pd.DataFrame:
+    """
+    Summarise predicted variant impacts.
+    """
 
-    return (
+    if "Impact" in final_df.columns:
 
-        final_df["Impact"]
+        impact_column = "Impact"
 
+    elif "IMPACT" in final_df.columns:
+
+        impact_column = "IMPACT"
+
+    else:
+
+        return pd.DataFrame(
+            columns=[
+                "Impact",
+                "Count"
+            ]
+        )
+
+    impact_df = (
+
+        final_df[impact_column]
         .fillna("Unknown")
-
+        .replace("", "Unknown")
         .value_counts()
+        .rename_axis("Impact")
+        .reset_index(name="Count")
 
     )
 
+    return impact_df
 
-# ======================================================
-# SUMMARIZE VARIANT TYPES
-# ======================================================
 
-def summarize_variant_types(
+# =========================================================
+# 4. VARIANT TYPE SUMMARY
+# =========================================================
+
+def generate_variant_type_summary(
     final_df: pd.DataFrame
-) -> pd.Series:
+) -> pd.DataFrame:
+    """
+    Summarise variant types.
+    """
 
-    return (
+    # -----------------------------------------------------
+    # Use existing Variant_Type if available
+    # -----------------------------------------------------
 
-        final_df["Variant_Type"]
+    if "Variant_Type" in final_df.columns:
 
-        .fillna("Unknown")
+        variant_type_df = (
 
+            final_df["Variant_Type"]
+            .fillna("Unknown")
+            .replace("", "Unknown")
+            .value_counts()
+            .rename_axis("Variant_Type")
+            .reset_index(name="Count")
+
+        )
+
+        return variant_type_df
+
+    # -----------------------------------------------------
+    # Otherwise infer from REF and ALT
+    # -----------------------------------------------------
+
+    if (
+        "REF" not in final_df.columns
+        or "ALT" not in final_df.columns
+    ):
+
+        return pd.DataFrame(
+            columns=[
+                "Variant_Type",
+                "Count"
+            ]
+        )
+
+    def classify_variant(row):
+
+        ref = str(row["REF"]).strip()
+        alt = str(row["ALT"]).strip()
+
+        if not ref or not alt:
+            return "Unknown"
+
+        # Multiple ALT alleles
+        if "," in alt:
+            return "Multiple_ALTs"
+
+        # SNV
+        if len(ref) == 1 and len(alt) == 1:
+            return "SNV"
+
+        # Insertion
+        if len(alt) > len(ref):
+            return "Insertion"
+
+        # Deletion
+        if len(alt) < len(ref):
+            return "Deletion"
+
+        return "Complex"
+
+    variant_types = (
+        final_df
+        .apply(classify_variant, axis=1)
         .value_counts()
-
+        .rename_axis("Variant_Type")
+        .reset_index(name="Count")
     )
 
+    return variant_types
 
-# ======================================================
-# RUN QC
-# ======================================================
+
+# =========================================================
+# 5. MASTER QC FUNCTION
+# =========================================================
 
 def run_variant_quality_control(
     final_df: pd.DataFrame
 ):
     """
-    Run all quality-control summaries.
+    Run all variant quality-control analyses.
 
     Returns
     -------
     tuple
+        qc_report,
+        consequence_summary,
+        impact_summary,
+        variant_type_summary
     """
+
+    final_df = final_df.copy()
 
     qc_report = generate_qc_report(
         final_df
     )
 
-    consequence_summary = (
-
-        summarize_variant_consequences(
-            final_df
-        )
-
+    consequence_summary = generate_consequence_summary(
+        final_df
     )
 
-    impact_summary = (
-
-        summarize_variant_impact(
-            final_df
-        )
-
+    impact_summary = generate_impact_summary(
+        final_df
     )
 
-    variant_type_summary = (
-
-        summarize_variant_types(
-            final_df
-        )
-
+    variant_type_summary = generate_variant_type_summary(
+        final_df
     )
 
     return (
-
         qc_report,
-
         consequence_summary,
-
         impact_summary,
-
         variant_type_summary
-
     )
 
 
-# ======================================================
-# SAVE QC REPORTS
-# ======================================================
+# =========================================================
+# 6. SAVE QC REPORTS
+# =========================================================
 
 def save_qc_reports(
-
-    qc_report,
-
-    consequence_summary,
-
-    impact_summary,
-
-    variant_type_summary,
-
-    final_df,
-
-    output_folder
-
+    qc_report: pd.DataFrame,
+    consequence_summary: pd.DataFrame,
+    impact_summary: pd.DataFrame,
+    variant_type_summary: pd.DataFrame,
+    final_df: pd.DataFrame,
+    output_folder: str
 ):
     """
-    Save all QC reports.
+    Save all variant quality-control reports.
     """
 
     os.makedirs(
-
         output_folder,
-
         exist_ok=True
-
     )
+
+    # -----------------------------------------------------
+    # General QC report
+    # -----------------------------------------------------
 
     qc_report.to_csv(
-
         os.path.join(
-
             output_folder,
-
-            "ASS1_QC_Report.csv"
-
+            "Variant_QC_Report.csv"
         ),
-
         index=False
-
     )
+
+    # -----------------------------------------------------
+    # Consequence summary
+    # -----------------------------------------------------
 
     consequence_summary.to_csv(
-
         os.path.join(
-
             output_folder,
-
-            "ASS1_Consequence_Summary.csv"
-
-        )
-
+            "Consequence_Summary.csv"
+        ),
+        index=False
     )
+
+    # -----------------------------------------------------
+    # Impact summary
+    # -----------------------------------------------------
 
     impact_summary.to_csv(
-
         os.path.join(
-
             output_folder,
-
-            "ASS1_Impact_Summary.csv"
-
-        )
-
+            "Impact_Summary.csv"
+        ),
+        index=False
     )
+
+    # -----------------------------------------------------
+    # Variant type summary
+    # -----------------------------------------------------
 
     variant_type_summary.to_csv(
-
         os.path.join(
-
             output_folder,
-
-            "ASS1_VariantType_Summary.csv"
-
-        )
-
+            "Variant_Type_Summary.csv"
+        ),
+        index=False
     )
 
+    # -----------------------------------------------------
+    # Final table used for QC
+    # -----------------------------------------------------
+
     final_df.to_csv(
-
         os.path.join(
-
             output_folder,
-
-            "ASS1_Final_Annotated_Variants_QC.csv"
-
+            "Final_Table_QC_Copy.csv"
         ),
-
         index=False
-
     )
