@@ -1,3 +1,29 @@
+"""
+validate_final_table.py
+
+Generic validation of the final Sanger sequencing variant table.
+
+The validation checks:
+
+1. Required files exist.
+2. Final table contains records.
+3. Required columns are present.
+4. HGVS variants are valid and unique.
+5. REF / ALT fields are populated.
+6. Carrier counts agree with carrier sample lists.
+7. Variant frequencies agree with carrier counts.
+8. Genotype-table carrier identities agree with the final table.
+9. HGVS table and final table contain the same variants.
+10. Annotation columns are populated where available.
+
+This script deliberately contains NO gene-specific,
+transcript-specific, sample-specific, or variant-specific
+assumptions.
+
+The current gene/transcript used by the pipeline is defined
+in config.py and is therefore not hard-coded here.
+"""
+
 import pandas as pd
 from pathlib import Path
 
@@ -8,12 +34,14 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+
 FINAL_FILE = (
     PROJECT_ROOT
     / "output"
     / "results"
-    / "ASS1_Final_Annotated_Variants.csv"
+    / "Final_Annotated_Variants.csv"
 )
+
 
 GENOTYPE_FILE = (
     PROJECT_ROOT
@@ -21,6 +49,7 @@ GENOTYPE_FILE = (
     / "genotypes"
     / "Genotype_Table.csv"
 )
+
 
 HGVS_FILE = (
     PROJECT_ROOT
@@ -31,75 +60,84 @@ HGVS_FILE = (
 
 
 # ============================================================
-# EXPECTED FINAL VARIANTS
-#
-# These are defined by HGVS_Table.csv.
-# The carrier information is expected to come from
-# Genotype_Table.csv.
-# ============================================================
-
-EXPECTED = {
-    "NM_000050.4:c.783T>C": {
-        "hgvs_cdna_position": 783,
-        "transcript_position": 1139,
-        "ref": "T",
-        "alt": "C",
-        "carrier_count": 3,
-        "samples": {
-            "A5.ab1",
-            "A7.ab1",
-            "A9.ab1",
-        },
-    },
-
-    "NM_000050.4:c.876T>C": {
-        "hgvs_cdna_position": 876,
-        "transcript_position": 1232,
-        "ref": "T",
-        "alt": "C",
-        "carrier_count": 2,
-        "samples": {
-            "A5.ab1",
-            "A9.ab1",
-        },
-    },
-}
-
-
-# ============================================================
 # HELPER FUNCTIONS
 # ============================================================
 
 def clean(value):
-    """Clean a simple value."""
+    """
+    Convert a value to a stripped string.
+
+    Missing values are returned as an empty string.
+    """
+
     if pd.isna(value):
         return ""
+
     return str(value).strip()
 
 
+# ============================================================
+# SAMPLE PARSING
+# ============================================================
+
 def clean_sample(value):
-    """Normalise sample names."""
+    """
+    Normalise a sample identifier.
+    """
+
     return clean(value).replace(" ", "")
 
 
 def parse_samples(value):
-    """Convert semicolon-separated samples into a set."""
+    """
+    Convert a semicolon-separated sample list into a set.
+    """
+
     if pd.isna(value):
+
+        return set()
+
+    value = str(value).strip()
+
+    if value in {
+        "",
+        "-",
+        "nan",
+        "None",
+    }:
+
         return set()
 
     return {
-        clean_sample(x)
-        for x in str(value).split(";")
-        if clean_sample(x)
+        clean_sample(sample)
+        for sample in value.split(";")
+        if clean_sample(sample)
     }
 
 
+# ============================================================
+# CHECK FUNCTIONS
+# ============================================================
+
+validation_failed = False
+
+
 def pass_check(message):
-    print(f"PASS: {message}")
+
+    print(
+        f"PASS: {message}"
+    )
 
 
 def fail_check(message):
-    print(f"FAIL: {message}")
+
+    global validation_failed
+
+    validation_failed = True
+
+    print(
+        f"FAIL: {message}"
+    )
 
 
 # ============================================================
@@ -107,529 +145,1223 @@ def fail_check(message):
 # ============================================================
 
 print()
-print("=" * 70)
-print("FINAL VARIANT TABLE VALIDATION")
-print("=" * 70)
-print()
 
+print(
+    "=" * 70
+)
 
-# ============================================================
-# CHECK REQUIRED FILES
-# ============================================================
+print(
+    "FINAL VARIANT TABLE VALIDATION"
+)
 
-print("Checking required files ...")
-
-required_files = [
-    FINAL_FILE,
-    GENOTYPE_FILE,
-    HGVS_FILE,
-]
-
-for file_path in required_files:
-
-    if file_path.exists():
-        pass_check(str(file_path))
-    else:
-        fail_check(f"Missing file: {file_path}")
-        raise SystemExit(1)
+print(
+    "=" * 70
+)
 
 print()
 
 
 # ============================================================
-# LOAD FILES
+# 1. CHECK REQUIRED FILES
 # ============================================================
 
-final_df = pd.read_csv(FINAL_FILE)
-genotype_df = pd.read_csv(GENOTYPE_FILE)
-hgvs_df = pd.read_csv(HGVS_FILE)
+print(
+    "Checking required files ..."
+)
 
+required_files = {
 
-# Strip whitespace from column names
-final_df.columns = final_df.columns.astype(str).str.strip()
-genotype_df.columns = genotype_df.columns.astype(str).str.strip()
-hgvs_df.columns = hgvs_df.columns.astype(str).str.strip()
+    "Final variant table":
+        FINAL_FILE,
 
+    "Genotype table":
+        GENOTYPE_FILE,
 
-print(f"Final table records: {len(final_df)}")
-print(f"Genotype records: {len(genotype_df)}")
-print(f"HGVS records: {len(hgvs_df)}")
-print()
+    "HGVS table":
+        HGVS_FILE,
 
-
-# ============================================================
-# 1. FINAL NUMBER OF VARIANTS
-# ============================================================
-
-print("-" * 70)
-print("1. NUMBER OF FINAL VARIANTS")
-print("-" * 70)
-
-if len(final_df) == 2:
-    pass_check("Final table contains exactly 2 variants")
-else:
-    fail_check(
-        f"Expected 2 final variants, found {len(final_df)}"
-    )
-
-print()
-
-
-# ============================================================
-# 2. HGVS VARIANT CHECK
-# ============================================================
-
-print("-" * 70)
-print("2. HGVS VARIANT VALIDATION")
-print("-" * 70)
-
-actual_hgvs = {
-    clean(x)
-    for x in final_df["HGVS_cDNA"]
 }
 
-expected_hgvs = set(EXPECTED.keys())
 
-if actual_hgvs == expected_hgvs:
-    pass_check(
-        "Final HGVS variants exactly match the expected HGVS variants"
-    )
-else:
-    fail_check(
-        f"HGVS mismatch. Found: {sorted(actual_hgvs)}"
-    )
+for description, file_path in required_files.items():
+
+    if file_path.exists():
+
+        pass_check(
+            f"{description}: {file_path}"
+        )
+
+    else:
+
+        fail_check(
+            f"Missing {description}: {file_path}"
+        )
+
 
 print()
 
-for hgvs, expected in EXPECTED.items():
 
-    print(f"Variant: {hgvs}")
+if validation_failed:
 
-    rows = final_df[
-        final_df["HGVS_cDNA"].astype(str).str.strip()
-        == hgvs
-    ]
-
-    if rows.empty:
-        fail_check("Variant is missing from final table")
-        print()
-        continue
-
-    row = rows.iloc[0]
-
-    # --------------------------------------------------------
-    # REF
-    # --------------------------------------------------------
-
-    actual_ref = clean(row["REF"])
-
-    if actual_ref == expected["ref"]:
-        pass_check(f"REF = {actual_ref}")
-    else:
-        fail_check(
-            f"REF mismatch: expected {expected['ref']}, "
-            f"found {actual_ref}"
-        )
-
-    # --------------------------------------------------------
-    # ALT
-    # --------------------------------------------------------
-
-    actual_alt = clean(row["ALT"])
-
-    if actual_alt == expected["alt"]:
-        pass_check(f"ALT = {actual_alt}")
-    else:
-        fail_check(
-            f"ALT mismatch: expected {expected['alt']}, "
-            f"found {actual_alt}"
-        )
-
-    print()
+    raise SystemExit(
+        "\nValidation stopped because required files are missing."
+    )
 
 
 # ============================================================
-# 3. CARRIER VALIDATION
+# 2. LOAD FILES
 # ============================================================
 
-print("-" * 70)
-print("3. CARRIER VALIDATION")
-print("-" * 70)
+print(
+    "Loading tables ..."
+)
 
-carrier_validation_pass = True
+try:
 
-for hgvs, expected in EXPECTED.items():
+    final_df = pd.read_csv(
+        FINAL_FILE
+    )
 
-    rows = final_df[
-        final_df["HGVS_cDNA"].astype(str).str.strip()
-        == hgvs
+    genotype_df = pd.read_csv(
+        GENOTYPE_FILE
+    )
+
+    hgvs_df = pd.read_csv(
+        HGVS_FILE
+    )
+
+except Exception as exc:
+
+    raise RuntimeError(
+        f"Unable to load validation tables: {exc}"
+    )
+
+
+# ============================================================
+# CLEAN COLUMN NAMES
+# ============================================================
+
+final_df.columns = (
+    final_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+
+genotype_df.columns = (
+    genotype_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+
+hgvs_df.columns = (
+    hgvs_df.columns
+    .astype(str)
+    .str.strip()
+)
+
+
+print()
+
+print(
+    f"Final table records: {len(final_df)}"
+)
+
+print(
+    f"Genotype records: {len(genotype_df)}"
+)
+
+print(
+    f"HGVS records: {len(hgvs_df)}"
+)
+
+print()
+
+
+# ============================================================
+# 3. CHECK FINAL TABLE IS NOT EMPTY
+# ============================================================
+
+print(
+    "-" * 70
+)
+
+print(
+    "1. FINAL TABLE CHECK"
+)
+
+print(
+    "-" * 70
+)
+
+
+if len(final_df) > 0:
+
+    pass_check(
+        f"Final table contains {len(final_df)} variant record(s)"
+    )
+
+else:
+
+    fail_check(
+        "Final variant table is empty"
+    )
+
+
+print()
+
+
+# ============================================================
+# 4. REQUIRED FINAL TABLE COLUMNS
+# ============================================================
+
+print(
+    "-" * 70
+)
+
+print(
+    "2. REQUIRED FINAL COLUMNS"
+)
+
+print(
+    "-" * 70
+)
+
+
+required_final_columns = [
+
+    "HGVS_cDNA",
+
+    "REF",
+
+    "ALT",
+
+    "Carrier_Count",
+
+    "Variant_Frequency",
+
+    "Samples",
+
+]
+
+
+missing_final_columns = [
+
+    column
+
+    for column in required_final_columns
+
+    if column not in final_df.columns
+
+]
+
+
+if not missing_final_columns:
+
+    pass_check(
+        "All required final-table columns are present"
+    )
+
+else:
+
+    fail_check(
+        "Missing final-table columns: "
+        + ", ".join(missing_final_columns)
+    )
+
+
+print()
+
+
+# ============================================================
+# STOP IF CORE COLUMNS ARE MISSING
+# ============================================================
+
+if missing_final_columns:
+
+    raise SystemExit(
+        "\nValidation stopped because required final-table "
+        "columns are missing."
+    )
+
+
+# ============================================================
+# 5. HGVS VALIDATION
+# ============================================================
+
+print(
+    "-" * 70
+)
+
+print(
+    "3. HGVS VALIDATION"
+)
+
+print(
+    "-" * 70
+)
+
+
+final_hgvs = [
+
+    clean(value)
+
+    for value in final_df["HGVS_cDNA"]
+
+]
+
+
+final_hgvs = [
+
+    value
+
+    for value in final_hgvs
+
+    if value
+
+]
+
+
+if len(final_hgvs) == len(final_df):
+
+    pass_check(
+        "All final variants have HGVS_cDNA values"
+    )
+
+else:
+
+    fail_check(
+        "One or more final variants have missing HGVS_cDNA"
+    )
+
+
+# ------------------------------------------------------------
+# Duplicate HGVS
+# ------------------------------------------------------------
+
+if len(final_hgvs) == len(set(final_hgvs)):
+
+    pass_check(
+        "HGVS_cDNA values are unique"
+    )
+
+else:
+
+    duplicates = (
+
+        pd.Series(final_hgvs)
+
+        .value_counts()
+
+        .loc[lambda x: x > 1]
+
+        .index
+
+        .tolist()
+
+    )
+
+    fail_check(
+        "Duplicate HGVS variants found: "
+        + ", ".join(duplicates)
+    )
+
+
+# ============================================================
+# 6. HGVS TABLE CROSS-CHECK
+# ============================================================
+
+print()
+
+print(
+    "-" * 70
+)
+
+print(
+    "4. HGVS TABLE CROSS-CHECK"
+)
+
+print(
+    "-" * 70
+)
+
+
+if "HGVS_cDNA" not in hgvs_df.columns:
+
+    fail_check(
+        "HGVS table does not contain HGVS_cDNA"
+    )
+
+else:
+
+    hgvs_table_values = [
+
+        clean(value)
+
+        for value in hgvs_df["HGVS_cDNA"]
+
+        if clean(value)
+
     ]
 
-    if rows.empty:
-        carrier_validation_pass = False
+    final_hgvs_set = set(
+        final_hgvs
+    )
+
+    hgvs_table_set = set(
+        hgvs_table_values
+    )
+
+    missing_from_final = (
+        hgvs_table_set
+        - final_hgvs_set
+    )
+
+    missing_from_hgvs = (
+        final_hgvs_set
+        - hgvs_table_set
+    )
+
+    if not missing_from_final and not missing_from_hgvs:
+
+        pass_check(
+            "Final table and HGVS table contain the same HGVS variants"
+        )
+
+    else:
+
+        if missing_from_final:
+
+            fail_check(
+                "HGVS variants present in HGVS table "
+                "but missing from final table: "
+                + ", ".join(
+                    sorted(missing_from_final)
+                )
+            )
+
+        if missing_from_hgvs:
+
+            fail_check(
+                "HGVS variants present in final table "
+                "but missing from HGVS table: "
+                + ", ".join(
+                    sorted(missing_from_hgvs)
+                )
+            )
+
+
+# ============================================================
+# 7. REF / ALT VALIDATION
+# ============================================================
+
+print()
+
+print(
+    "-" * 70
+)
+
+print(
+    "5. REF / ALT VALIDATION"
+)
+
+print(
+    "-" * 70
+)
+
+
+for index, row in final_df.iterrows():
+
+    hgvs = clean(
+        row["HGVS_cDNA"]
+    )
+
+    ref = clean(
+        row["REF"]
+    )
+
+    alt = clean(
+        row["ALT"]
+    )
+
+
+    if ref:
+
+        pass_check(
+            f"{hgvs}: REF = {ref}"
+        )
+
+    else:
+
+        fail_check(
+            f"{hgvs}: missing REF"
+        )
+
+
+    if alt:
+
+        pass_check(
+            f"{hgvs}: ALT = {alt}"
+        )
+
+    else:
+
+        fail_check(
+            f"{hgvs}: missing ALT"
+        )
+
+
+# ============================================================
+# 8. CARRIER COUNT VALIDATION
+# ============================================================
+
+print()
+
+print(
+    "-" * 70
+)
+
+print(
+    "6. CARRIER COUNT VALIDATION"
+)
+
+print(
+    "-" * 70
+)
+
+
+for _, row in final_df.iterrows():
+
+    hgvs = clean(
+        row["HGVS_cDNA"]
+    )
+
+    try:
+
+        carrier_count = int(
+            row["Carrier_Count"]
+        )
+
+    except (
+        ValueError,
+        TypeError
+    ):
+
+        fail_check(
+            f"{hgvs}: invalid Carrier_Count"
+        )
+
         continue
 
-    row = rows.iloc[0]
 
-    actual_count = int(row["Carrier_Count"])
-
-    actual_samples = parse_samples(
+    samples = parse_samples(
         row["Samples"]
     )
 
-    expected_samples = {
-        clean_sample(x)
-        for x in expected["samples"]
-    }
+    sample_count = len(
+        samples
+    )
+
 
     print()
-    print(hgvs)
-
-    # --------------------------------------------------------
-    # Carrier count
-    # --------------------------------------------------------
 
     print(
-        f"Expected carrier count: {expected['carrier_count']}"
+        f"Variant: {hgvs}"
     )
 
     print(
-        f"Actual carrier count:   {actual_count}"
-    )
-
-    if actual_count == expected["carrier_count"]:
-        pass_check("Carrier count is correct")
-    else:
-        fail_check("Carrier count is incorrect")
-        carrier_validation_pass = False
-
-    # --------------------------------------------------------
-    # Carrier samples
-    # --------------------------------------------------------
-
-    print(
-        f"Expected carriers: {sorted(expected_samples)}"
+        f"Carrier_Count: {carrier_count}"
     )
 
     print(
-        f"Actual carriers:   {sorted(actual_samples)}"
+        f"Samples: {sorted(samples)}"
     )
 
-    if actual_samples == expected_samples:
-        pass_check("Carrier sample identities are correct")
-    else:
-        fail_check("Carrier sample identities are incorrect")
-        carrier_validation_pass = False
 
-    # --------------------------------------------------------
-    # Variant frequency
-    # --------------------------------------------------------
+    if carrier_count == sample_count:
 
-    actual_frequency = float(
-        row["Variant_Frequency"]
-    )
-
-    expected_frequency = (
-        expected["carrier_count"] / 3
-    )
-
-    print(
-        f"Expected frequency: {expected_frequency:.6f}"
-    )
-
-    print(
-        f"Actual frequency:   {actual_frequency:.6f}"
-    )
-
-    if abs(actual_frequency - expected_frequency) < 1e-6:
-        pass_check("Variant frequency is correct")
-    else:
-        fail_check("Variant frequency is incorrect")
-        carrier_validation_pass = False
-
-
-# ============================================================
-# 4. VEP ANNOTATION VALIDATION
-# ============================================================
-
-print()
-print("-" * 70)
-print("4. VEP ANNOTATION VALIDATION")
-print("-" * 70)
-
-required_columns = [
-    "Consequence",
-    "IMPACT",
-    "SYMBOL",
-    "Gene",
-    "Feature",
-    "HGVSc",
-    "HGVSp",
-]
-
-for column in required_columns:
-
-    if column not in final_df.columns:
-
-        fail_check(
-            f"Missing annotation column: {column}"
-        )
-
-    else:
-
-        populated = (
-            final_df[column]
-            .notna()
-            .sum()
-        )
-
-        if populated == len(final_df):
-            pass_check(
-                f"{column} populated for all variants"
-            )
-        else:
-            fail_check(
-                f"{column}: {populated}/{len(final_df)} populated"
-            )
-
-
-# ============================================================
-# 5. EXPECTED VEP CONSEQUENCES
-# ============================================================
-
-print()
-print("-" * 70)
-print("5. VEP CONSEQUENCE VALIDATION")
-print("-" * 70)
-
-for hgvs in expected_hgvs:
-
-    row = final_df[
-        final_df["HGVS_cDNA"].astype(str).str.strip()
-        == hgvs
-    ]
-
-    if row.empty:
-        continue
-
-    row = row.iloc[0]
-
-    consequence = clean(
-        row["Consequence"]
-    )
-
-    impact = clean(
-        row["IMPACT"]
-    )
-
-    if consequence == "synonymous_variant":
         pass_check(
-            f"{hgvs}: Consequence = synonymous_variant"
-        )
-    else:
-        fail_check(
-            f"{hgvs}: unexpected consequence = {consequence}"
+            f"{hgvs}: Carrier_Count matches number of unique samples"
         )
 
-    if impact == "LOW":
-        pass_check(
-            f"{hgvs}: IMPACT = LOW"
-        )
     else:
+
         fail_check(
-            f"{hgvs}: unexpected IMPACT = {impact}"
+            f"{hgvs}: Carrier_Count ({carrier_count}) "
+            f"does not match sample count ({sample_count})"
         )
 
 
 # ============================================================
-# 6. GENOTYPE TABLE CROSS-CHECK
+# 9. VARIANT FREQUENCY VALIDATION
 # ============================================================
 
 print()
-print("-" * 70)
-print("6. GENOTYPE TABLE CROSS-CHECK")
-print("-" * 70)
 
-required_genotype_columns = [
-    "Sample",
-    "cDNA_Position",
-    "REF",
-    "Observed_Base",
-    "ALT",
-    "Zygosity",
-    "Is_Variant",
-]
+print(
+    "-" * 70
+)
 
-missing = [
-    c
-    for c in required_genotype_columns
-    if c not in genotype_df.columns
-]
+print(
+    "7. VARIANT FREQUENCY VALIDATION"
+)
 
-if missing:
+print(
+    "-" * 70
+)
 
-    fail_check(
-        f"Missing genotype columns: {missing}"
+
+# ------------------------------------------------------------
+# Determine total number of samples
+# ------------------------------------------------------------
+
+if "Sample" in genotype_df.columns:
+
+    all_samples = {
+
+        clean_sample(sample)
+
+        for sample in genotype_df["Sample"]
+
+        if clean_sample(sample)
+
+    }
+
+    total_samples = len(
+        all_samples
     )
 
 else:
 
-    for hgvs, expected in EXPECTED.items():
+    total_samples = 0
 
-        position = expected["transcript_position"]
 
-        records = genotype_df[
-            genotype_df["cDNA_Position"]
-            == position
-        ].copy()
+print(
+    f"Total unique samples in genotype table: "
+    f"{total_samples}"
+)
 
-        print()
-        print(hgvs)
-        print(
-            f"Checking genotype position: {position}"
+
+for _, row in final_df.iterrows():
+
+    hgvs = clean(
+        row["HGVS_cDNA"]
+    )
+
+    try:
+
+        carrier_count = int(
+            row["Carrier_Count"]
         )
 
-        if records.empty:
+        observed_frequency = float(
+            row["Variant_Frequency"]
+        )
 
-            fail_check(
-                f"No genotype records found at position {position}"
+    except (
+        ValueError,
+        TypeError
+    ):
+
+        fail_check(
+            f"{hgvs}: invalid numeric frequency fields"
+        )
+
+        continue
+
+
+    if total_samples == 0:
+
+        fail_check(
+            f"{hgvs}: unable to determine total sample count"
+        )
+
+        continue
+
+
+    expected_frequency = (
+        carrier_count
+        / total_samples
+    )
+
+
+    print()
+
+    print(
+        f"Variant: {hgvs}"
+    )
+
+    print(
+        f"Expected frequency: "
+        f"{expected_frequency:.6f}"
+    )
+
+    print(
+        f"Observed frequency: "
+        f"{observed_frequency:.6f}"
+    )
+
+
+    if abs(
+        observed_frequency
+        - expected_frequency
+    ) < 1e-9:
+
+        pass_check(
+            f"{hgvs}: Variant_Frequency is correct"
+        )
+
+    else:
+
+        fail_check(
+            f"{hgvs}: Variant_Frequency is incorrect"
+        )
+
+
+# ============================================================
+# 10. GENOTYPE TABLE STRUCTURE
+# ============================================================
+
+print()
+
+print(
+    "-" * 70
+)
+
+print(
+    "8. GENOTYPE TABLE VALIDATION"
+)
+
+print(
+    "-" * 70
+)
+
+
+required_genotype_columns = [
+
+    "Sample",
+
+    "cDNA_Position",
+
+    "REF",
+
+    "Observed_Base",
+
+    "ALT",
+
+    "Zygosity",
+
+    "Is_Variant",
+
+]
+
+
+missing_genotype_columns = [
+
+    column
+
+    for column in required_genotype_columns
+
+    if column not in genotype_df.columns
+
+]
+
+
+if not missing_genotype_columns:
+
+    pass_check(
+        "All required genotype-table columns are present"
+    )
+
+else:
+
+    fail_check(
+        "Missing genotype-table columns: "
+        + ", ".join(
+            missing_genotype_columns
+        )
+    )
+
+
+# ============================================================
+# 11. GENOTYPE → FINAL TABLE CROSS-CHECK
+# ============================================================
+
+if not missing_genotype_columns:
+
+    print()
+
+    print(
+        "-" * 70
+    )
+
+    print(
+        "9. GENOTYPE CARRIER CROSS-CHECK"
+    )
+
+    print(
+        "-" * 70
+    )
+
+
+    if "Transcript_Position" in final_df.columns:
+
+        position_column = (
+            "Transcript_Position"
+        )
+
+    elif "cDNA_Position" in final_df.columns:
+
+        position_column = (
+            "cDNA_Position"
+        )
+
+    else:
+
+        position_column = None
+
+
+    if position_column is None:
+
+        print(
+            "INFO: No transcript-position column available "
+            "for positional genotype cross-check."
+        )
+
+    else:
+
+        for _, row in final_df.iterrows():
+
+            hgvs = clean(
+                row["HGVS_cDNA"]
             )
 
-            continue
+            try:
 
-        records["Sample_Clean"] = (
-            records["Sample"]
-            .apply(clean_sample)
-        )
+                position = int(
+                    row[position_column]
+                )
 
-        records["ALT_Clean"] = (
-            records["ALT"]
-            .apply(clean)
-        )
+            except (
+                ValueError,
+                TypeError
+            ):
 
-        records["Observed_Clean"] = (
-            records["Observed_Base"]
-            .apply(clean)
-        )
+                fail_check(
+                    f"{hgvs}: invalid position"
+                )
 
-        records["Is_Variant_Clean"] = (
-            records["Is_Variant"]
-            .astype(str)
-            .str.lower()
-            .eq("true")
-        )
+                continue
 
-        carrier_records = records[
-            records["Is_Variant_Clean"]
-            &
-            (
-                records["Observed_Clean"]
-                == expected["alt"]
+
+            records = genotype_df[
+
+                genotype_df["cDNA_Position"]
+                == position
+
+            ].copy()
+
+
+            if records.empty:
+
+                fail_check(
+                    f"{hgvs}: no genotype records at "
+                    f"position {position}"
+                )
+
+                continue
+
+
+            records["Sample_Clean"] = (
+
+                records["Sample"]
+
+                .apply(clean_sample)
+
             )
-        ]
 
-        genotype_samples = set(
-            carrier_records["Sample_Clean"]
+
+            records["Observed_Clean"] = (
+
+                records["Observed_Base"]
+
+                .apply(clean)
+
+            )
+
+
+            records["Is_Variant_Clean"] = (
+
+                records["Is_Variant"]
+
+                .astype(str)
+
+                .str.lower()
+
+                .eq("true")
+
+            )
+
+
+            expected_alt = clean(
+                row["ALT"]
+            )
+
+
+            carrier_records = records[
+
+                records["Is_Variant_Clean"]
+
+                & (
+
+                    records["Observed_Clean"]
+
+                    == expected_alt
+
+                )
+
+            ]
+
+
+            genotype_samples = set(
+
+                carrier_records[
+                    "Sample_Clean"
+                ]
+
+            )
+
+
+            final_samples = parse_samples(
+                row["Samples"]
+            )
+
+
+            print()
+
+            print(
+                f"Variant: {hgvs}"
+            )
+
+            print(
+                f"Genotype carriers: "
+                f"{sorted(genotype_samples)}"
+            )
+
+            print(
+                f"Final-table carriers: "
+                f"{sorted(final_samples)}"
+            )
+
+
+            if genotype_samples == final_samples:
+
+                pass_check(
+                    f"{hgvs}: genotype carriers match "
+                    "final-table carriers"
+                )
+
+            else:
+
+                fail_check(
+                    f"{hgvs}: genotype carriers do not "
+                    "match final-table carriers"
+                )
+
+
+# ============================================================
+# 12. ANNOTATION VALIDATION
+# ============================================================
+
+print()
+
+print(
+    "-" * 70
+)
+
+print(
+    "10. VEP ANNOTATION VALIDATION"
+)
+
+print(
+    "-" * 70
+)
+
+
+annotation_columns = [
+
+    "Consequence",
+
+    "IMPACT",
+
+    "SYMBOL",
+
+    "Gene",
+
+    "Feature",
+
+    "HGVSc",
+
+    "HGVSp",
+
+]
+
+
+available_annotation_columns = [
+
+    column
+
+    for column in annotation_columns
+
+    if column in final_df.columns
+
+]
+
+
+if not available_annotation_columns:
+
+    print(
+        "INFO: No standard VEP annotation columns "
+        "were found in the final table."
+    )
+
+else:
+
+    for column in available_annotation_columns:
+
+        populated = (
+
+            final_df[column]
+
+            .notna()
+
+            .sum()
+
         )
 
-        expected_samples = {
-            clean_sample(x)
-            for x in expected["samples"]
-        }
 
-        print(
-            "Genotype-table carriers:",
-            sorted(genotype_samples)
-        )
-
-        print(
-            "Expected carriers:",
-            sorted(expected_samples)
-        )
-
-        if genotype_samples == expected_samples:
+        if populated == len(final_df):
 
             pass_check(
-                "Genotype carriers match final carrier list"
+                f"{column}: populated for all variants"
             )
 
         else:
 
             fail_check(
-                "Genotype carriers DO NOT match final carrier list"
+                f"{column}: only "
+                f"{populated}/{len(final_df)} "
+                "variants populated"
             )
 
 
 # ============================================================
-# 7. PRINT FINAL TABLE
+# 13. NUMERIC FIELD VALIDATION
 # ============================================================
 
 print()
-print("=" * 70)
-print("FINAL VARIANT TABLE")
-print("=" * 70)
 
-display_columns = [
-    "HGVS_cDNA",
-    "REF",
-    "ALT",
-    "Consequence",
-    "IMPACT",
+print(
+    "-" * 70
+)
+
+print(
+    "11. NUMERIC FIELD VALIDATION"
+)
+
+print(
+    "-" * 70
+)
+
+
+numeric_columns = [
+
     "Carrier_Count",
+
     "Variant_Frequency",
-    "Samples",
+
 ]
 
-available_columns = [
-    c for c in display_columns
-    if c in final_df.columns
-]
+
+for column in numeric_columns:
+
+    converted = pd.to_numeric(
+
+        final_df[column],
+
+        errors="coerce"
+
+    )
+
+
+    invalid = converted.isna().sum()
+
+
+    if invalid == 0:
+
+        pass_check(
+            f"{column}: all values are numeric"
+        )
+
+    else:
+
+        fail_check(
+            f"{column}: {invalid} invalid numeric value(s)"
+        )
+
+
+# ============================================================
+# 14. FINAL TABLE DISPLAY
+# ============================================================
 
 print()
+
 print(
-    final_df[available_columns]
-    .to_string(index=False)
+    "=" * 70
+)
+
+print(
+    "FINAL VARIANT TABLE"
+)
+
+print(
+    "=" * 70
+)
+
+
+display_columns = [
+
+    "HGVS_cDNA",
+
+    "REF",
+
+    "ALT",
+
+    "Consequence",
+
+    "IMPACT",
+
+    "Carrier_Count",
+
+    "Variant_Frequency",
+
+    "Samples",
+
+]
+
+
+available_columns = [
+
+    column
+
+    for column in display_columns
+
+    if column in final_df.columns
+
+]
+
+
+print()
+
+print(
+
+    final_df[
+
+        available_columns
+
+    ]
+
+    .to_string(
+        index=False
+    )
+
 )
 
 
 # ============================================================
-# FINAL RESULT
+# 15. FINAL RESULT
 # ============================================================
 
 print()
-print("=" * 70)
-print("FINAL VALIDATION RESULT")
-print("=" * 70)
 
-if (
-    len(final_df) == 2
-    and actual_hgvs == expected_hgvs
-    and carrier_validation_pass
-):
+print(
+    "=" * 70
+)
+
+print(
+    "FINAL VALIDATION RESULT"
+)
+
+print(
+    "=" * 70
+)
+
+
+if validation_failed:
 
     print()
-    print("OVERALL RESULT: PASS")
+
+    print(
+        "OVERALL RESULT: FAIL"
+    )
+
     print()
+
     print(
-        "The final variant table contains the correct 2 HGVS variants."
+        "One or more validation checks failed."
     )
+
     print(
-        "The carrier counts and carrier identities are correct."
-    )
-    print(
-        "The final table is consistent with the expected genotype results."
+        "Review the FAIL messages above."
     )
 
 else:
 
     print()
-    print("OVERALL RESULT: FAIL")
-    print()
+
     print(
-        "One or more validation checks failed."
+        "OVERALL RESULT: PASS"
     )
 
+    print()
+
+    print(
+        "The final variant table passed all "
+        "generic validation checks."
+    )
+
+    print(
+        "Carrier counts, frequencies, HGVS records, "
+        "and genotype carrier identities are consistent."
+    )
+
+
 print()
-print("=" * 70)
-print("VALIDATION COMPLETE")
-print("=" * 70)
+
+print(
+    "=" * 70
+)
+
+print(
+    "VALIDATION COMPLETE"
+)
+
+print(
+    "=" * 70
+)
+
+print()
+
+
+# ============================================================
+# EXIT STATUS
+# ============================================================
+
+if validation_failed:
+
+    raise SystemExit(1)
+
+else:
+
+    raise SystemExit(0)
