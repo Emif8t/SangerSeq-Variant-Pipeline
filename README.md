@@ -336,19 +336,28 @@ config.py
 
 and review the configuration parameters.
 
-NCBI email
+## NCBI Email Configuration
 
-Provide a valid email address:
+The pipeline requires an email address when communicating with NCBI
+services.
 
-NCBI_EMAIL = "your_email@example.com"
+For security and reproducibility, the email address is not stored directly
+in `config.py`. Instead, provide it through the `NCBI_EMAIL` environment
+variable.
 
-Replace the placeholder with your own email address.
+### Windows PowerShell
 
-For example:
+```powershell
+$env:NCBI_EMAIL="your_real_email@example.com"
+```
 
-NCBI_EMAIL = "researcher@example.com"
+### macOS/Linux
 
-This is used when communicating with NCBI services.
+```bash
+export NCBI_EMAIL="your_real_email@example.com"
+```
+
+The pipeline will report an error if NCBI_EMAIL has not been configured.
 
 Reference Transcript
 

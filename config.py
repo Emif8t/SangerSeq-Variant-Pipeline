@@ -25,9 +25,12 @@ OUTPUT_FOLDER = "output"
 # NCBI SETTINGS
 # ============================================================
 
-# Replace this with the user's real email address.
-# NCBI requests an email for identification/contact.
-NCBI_EMAIL = "your_email@example.com"
+# Email address used when communicating with NCBI services.
+# Set the NCBI_EMAIL environment variable before running the pipeline.
+#
+# The email address is intentionally not stored in the repository.
+
+NCBI_EMAIL = os.getenv("NCBI_EMAIL")
 
 
 # ============================================================
