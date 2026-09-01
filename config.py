@@ -3,62 +3,82 @@ Configuration file for the SangerSeq Variant Pipeline.
 
 Edit the parameters below before running the pipeline.
 """
-import os
-from pathlib import Path
 
-# ======================================================
+import os
+
+
+# ============================================================
 # INPUT / OUTPUT DIRECTORIES
-# ======================================================
+# ============================================================
 
 DATA_FOLDER = "data"
-AB1_FOLDER = os.path.join(DATA_FOLDER, "raw")
+
+AB1_FOLDER = os.path.join(
+    DATA_FOLDER,
+    "raw"
+)
+
 OUTPUT_FOLDER = "output"
 
-# ======================================================
-# NCBI SETTINGS
-# ======================================================
 
+# ============================================================
+# NCBI SETTINGS
+# ============================================================
+
+# Replace this with the user's real email address.
+# NCBI requests an email for identification/contact.
 NCBI_EMAIL = "your_email@example.com"
 
-# ======================================================
+
+# ============================================================
 # REFERENCE TRANSCRIPT
-# ======================================================
+# ============================================================
 
 REFSEQ_ID = "NM_000050.4"
 
-# PCR amplicon coordinates (RefSeq cDNA)
 
-#AMPLICON_START = 1007
-#AMPLICON_END = 1402
+# ============================================================
+# PCR AMPLICON
+# ============================================================
 
-# ======================================================
-# QUALITY SETTINGS
-# ======================================================
+# Optional explicit amplicon coordinates.
+#
+# Leave commented if the pipeline should determine the
+# amplicon from the PCR primers.
+
+# AMPLICON_START = 1007
+# AMPLICON_END = 1402
+
+
+# ============================================================
+# SEQUENCING QUALITY
+# ============================================================
 
 MIN_PHRED = 20
 
-# ======================================================
+
+# ============================================================
 # PCR PRIMERS
-# ======================================================
+# ============================================================
 
 FORWARD_PRIMER = "CAACACCCCTGACATTCTCG"
 
 REVERSE_PRIMER = "ACTTTCCCTTCCACTCGCTC"
 
 
-# ======================================================
+# ============================================================
 # HGVS SETTINGS
-# ======================================================
+# ============================================================
 
 TRANSCRIPT = "NM_000050.4"
 
-# Coding sequence starts at transcript position
-
+# Coding sequence starts at transcript position 357.
 CDS_START = 357
 
-# ======================================================
+
+# ============================================================
 # ENSEMBL VEP
-# ======================================================
+# ============================================================
 
 ENSEMBL_SERVER = "https://rest.ensembl.org"
 
@@ -68,30 +88,49 @@ ENSEMBL_HEADERS = {
 
 REQUEST_TIMEOUT = 30
 
-MAX_RETRIES = 2
+MAX_RETRIES = 3
 
-REQUEST_DELAY = 0.05
+REQUEST_DELAY = 0.1
 
 
-# ======================================================
-# ANNOTATION SETTINGS
-# ======================================================
+# ============================================================
+# ANNOTATION METHOD
+# ============================================================
 
-# Annotation method:
-# "api" = query Ensembl REST API
-# "web" = import an existing VEP web output
+# Default annotation method.
+#
+# "api" = automatically annotate variants using the
+#         Ensembl VEP REST API.
+#
+# "web" = use an existing VEP web-exported Excel file.
+#
+# API is recommended as the default because it makes the
+# pipeline more reproducible and avoids requiring the user
+# to manually upload variants to the VEP website.
 
-ANNOTATION_METHOD = "web"
+ANNOTATION_METHOD = "api"
 
-# ======================================================
-# VEP OUTPUT
-# ======================================================
+
+# ============================================================
+# VEP WEB OUTPUT
+# ============================================================
+
+# This file is only required when:
+#
+#     ANNOTATION_METHOD = "web"
+#
+# It is not required for normal API-based operation.
 
 VEP_OUTPUT_FILE = os.path.join(
     DATA_FOLDER,
     "annotation",
     "VEP_HGVS_OUTPUT.xlsx"
 )
+
+
+# ============================================================
+# PHENOTYPE / SAMPLE GROUP INFORMATION
+# ============================================================
 
 PHENOTYPE_FILE = os.path.join(
     DATA_FOLDER,

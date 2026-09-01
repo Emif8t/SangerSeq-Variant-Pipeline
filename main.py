@@ -471,7 +471,8 @@ def main():
             ENSEMBL_HEADERS,
             REQUEST_TIMEOUT,
             MAX_RETRIES,
-            REQUEST_DELAY
+            REQUEST_DELAY,
+            TRANSCRIPT
         )
 
         save_annotation_table(
@@ -519,7 +520,7 @@ def main():
     final_df = build_final_variant_table(
         hgvs_df,
         genotype_df,
-        VEP_OUTPUT_FILE
+        annotation_df
     )
 
     final_output_folder = os.path.join(
