@@ -73,7 +73,7 @@ REVERSE_PRIMER = "ACTTTCCCTTCCACTCGCTC"
 # HGVS SETTINGS
 # ============================================================
 
-TRANSCRIPT = "NM_000050.4"
+TRANSCRIPT = REFSEQ_ID
 
 # Coding sequence starts at transcript position 357.
 CDS_START = 357

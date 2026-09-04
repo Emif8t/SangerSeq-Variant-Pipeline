@@ -580,6 +580,41 @@ def filter_high_confidence_variants(
 
     return high_confidence_df, variant_df
 
+def get_high_confidence_samples(
+    high_confidence_df: pd.DataFrame
+) -> set:
+    """
+    Return sample identifiers with at least one
+    high-confidence genotype call.
+
+    A high-confidence genotype call is defined by
+    filter_high_confidence_variants() as having:
+
+    - Quality >= minimum Phred threshold
+    - Non-missing Genotype
+    """
+
+    if high_confidence_df.empty:
+        return set()
+
+    if "Sample" not in high_confidence_df.columns:
+        raise KeyError(
+            "High-confidence genotype table must contain "
+            "'Sample'."
+        )
+
+    samples = (
+        high_confidence_df["Sample"]
+        .dropna()
+        .astype(str)
+        .str.strip()
+    )
+
+    return set(
+        sample
+        for sample in samples
+        if sample
+    )
 
 # ============================================================
 # VARIANT SUMMARY

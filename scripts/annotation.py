@@ -1,37 +1,34 @@
 """
 annotation.py
 
-Functions for functional annotation of validated
-variants using the Ensembl Variant Effect Predictor
-(VEP) REST API.
+Functions for functional annotation of validated variants using
+the Ensembl Variant Effect Predictor (VEP) REST API.
 
-The Ensembl VEP REST API is the default annotation
-method. An optional web-exported VEP file can be
-supported by the main pipeline when configured.
+The Ensembl VEP REST API is the primary annotation method.
 
-The parser preserves the principal VEP transcript-level
-fields required for downstream final-table generation
-and validation, including HGVSc and HGVSp.
+If an API annotation fails, the pipeline can optionally fall back
+to an existing VEP web-exported Excel file. This provides a
+reproducible recovery mechanism for temporary API/server failures.
 """
 
 import os
 import time
-import requests
-import pandas as pd
-
 from urllib.parse import quote
 
+import pandas as pd
+import requests
 
-# ======================================================
-# PARSE VEP RESPONSE
-# ======================================================
+
+# ============================================================
+# VEP RESPONSE PARSER
+# ============================================================
 
 def parse_vep_response(
     hgvs: str,
     result: dict
 ) -> dict:
     """
-    Extract useful information from a VEP response.
+    Extract useful information from a VEP API response.
 
     Parameters
     ----------
@@ -39,18 +36,13 @@ def parse_vep_response(
         Input HGVS cDNA variant.
 
     result : dict
-        Single variant result returned by the
-        Ensembl VEP REST API.
+        Single variant result returned by the Ensembl VEP API.
 
     Returns
     -------
     dict
         Parsed VEP annotation.
     """
-
-    # --------------------------------------------------
-    # Select transcript consequence
-    # --------------------------------------------------
 
     transcript_consequences = result.get(
         "transcript_consequences",
@@ -61,28 +53,20 @@ def parse_vep_response(
 
     if transcript_consequences:
 
-        # Prefer canonical transcript where available
         canonical_transcripts = [
-
             item
-
             for item in transcript_consequences
-
             if item.get("canonical") == 1
-
         ]
 
         if canonical_transcripts:
-
             transcript = canonical_transcripts[0]
-
         else:
-
             transcript = transcript_consequences[0]
 
-    # --------------------------------------------------
-    # Basic genomic information
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Genomic information
+    # --------------------------------------------------------
 
     chromosome = result.get(
         "seq_region_name"
@@ -100,28 +84,24 @@ def parse_vep_response(
 
     if chromosome and genomic_position:
 
-        if genomic_end and genomic_end != genomic_position:
-
+        if (
+            genomic_end
+            and genomic_end != genomic_position
+        ):
             genomic_coordinate = (
-
                 f"chr{chromosome}:"
                 f"{genomic_position}-"
                 f"{genomic_end}"
-
             )
-
         else:
-
             genomic_coordinate = (
-
                 f"chr{chromosome}:"
                 f"{genomic_position}"
-
             )
 
-    # --------------------------------------------------
-    # VEP transcript-level HGVS
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Transcript-level HGVS
+    # --------------------------------------------------------
 
     hgvsc = transcript.get(
         "hgvsc"
@@ -131,19 +111,16 @@ def parse_vep_response(
         "hgvsp"
     )
 
-    # --------------------------------------------------
+    # --------------------------------------------------------
     # Consequence
-    # --------------------------------------------------
+    # --------------------------------------------------------
 
     consequence_terms = transcript.get(
         "consequence_terms",
         []
     )
 
-    if isinstance(
-        consequence_terms,
-        list
-    ):
+    if isinstance(consequence_terms, list):
 
         consequence = ",".join(
             consequence_terms
@@ -155,25 +132,17 @@ def parse_vep_response(
             consequence_terms
         )
 
-    # --------------------------------------------------
+    # --------------------------------------------------------
     # Return annotation
-    # --------------------------------------------------
+    # --------------------------------------------------------
 
     return {
-
-        # ==============================================
-        # Input / status
-        # ==============================================
 
         "HGVS_cDNA":
             hgvs,
 
         "Status":
             "Annotated",
-
-        # ==============================================
-        # Assembly / genomic annotation
-        # ==============================================
 
         "Assembly":
             result.get(
@@ -202,35 +171,7 @@ def parse_vep_response(
                 "hgvsg"
             ),
 
-        # ==============================================
-        # Variant identification
-        # ==============================================
-
-        "dbSNP_rsID":
-            result.get(
-                "id"
-            ),
-
-        "Variant_Class":
-            result.get(
-                "variant_class"
-            ),
-
-        "Allele_String":
-            result.get(
-                "allele_string"
-            ),
-
-        "Most_Severe_Consequence":
-            result.get(
-                "most_severe_consequence"
-            ),
-
-        # ==============================================
-        # Gene annotation
-        # ==============================================
-
-        "Gene":
+        "Gene_Symbol":
             transcript.get(
                 "gene_symbol"
             ),
@@ -240,75 +181,9 @@ def parse_vep_response(
                 "gene_id"
             ),
 
-        "Gene_Symbol":
-            transcript.get(
-                "gene_symbol"
-            ),
-
-        "HGNC_ID":
-            transcript.get(
-                "hgnc_id"
-            ),
-
-        "Gene_Symbol_Source":
-            transcript.get(
-                "gene_symbol_source"
-            ),
-
-        # ==============================================
-        # Transcript annotation
-        # ==============================================
-
-        "Transcript":
+        "Transcript_ID":
             transcript.get(
                 "transcript_id"
-            ),
-
-        "Feature":
-            transcript.get(
-                "transcript_id"
-            ),
-
-        "Biotype":
-            transcript.get(
-                "biotype"
-            ),
-
-        "Exon":
-            transcript.get(
-                "exon"
-            ),
-
-        "Canonical":
-            transcript.get(
-                "canonical"
-            ),
-
-        # ==============================================
-        # MANE annotation
-        # ==============================================
-
-        "MANE_Select":
-            transcript.get(
-                "mane_select"
-            ),
-
-        "MANE":
-            ",".join(
-                transcript.get(
-                    "mane",
-                    []
-                )
-            )
-            if isinstance(
-                transcript.get(
-                    "mane",
-                    []
-                ),
-                list
-            )
-            else transcript.get(
-                "mane"
             ),
 
         "RefSeq_Transcript":
@@ -329,30 +204,14 @@ def parse_vep_response(
                 "refseq_transcript_ids"
             ),
 
-        # ==============================================
-        # HGVS annotation
-        # ==============================================
-
-        # IMPORTANT:
-        # These are the exact fields expected by
-        # downstream validation.
-
         "HGVSc":
             hgvsc,
 
         "HGVSp":
             hgvsp,
 
-        # Retain the older descriptive field as well
-        # for compatibility with existing pipeline
-        # components.
-
         "Protein_HGVS":
             hgvsp,
-
-        # ==============================================
-        # Consequence / impact
-        # ==============================================
 
         "Consequence":
             consequence,
@@ -361,10 +220,6 @@ def parse_vep_response(
             transcript.get(
                 "impact"
             ),
-
-        # ==============================================
-        # Protein annotation
-        # ==============================================
 
         "Protein_ID":
             transcript.get(
@@ -391,10 +246,6 @@ def parse_vep_response(
                 "codons"
             ),
 
-        # ==============================================
-        # Coding / cDNA coordinates
-        # ==============================================
-
         "CDS_Position":
             transcript.get(
                 "cds_start"
@@ -415,21 +266,395 @@ def parse_vep_response(
                 "cdna_end"
             ),
 
-        # ==============================================
-        # Variant allele
-        # ==============================================
-
         "Variant_Allele":
             transcript.get(
                 "variant_allele"
             )
-
     }
 
 
-# ======================================================
+# ============================================================
+# LOAD WEB VEP FALLBACK
+# ============================================================
+
+def load_vep_web_fallback(
+    vep_output_file: str
+) -> pd.DataFrame:
+    """
+    Load an existing VEP web-exported Excel annotation table.
+
+    Parameters
+    ----------
+    vep_output_file : str
+        Path to VEP Excel export.
+
+    Returns
+    -------
+    pandas.DataFrame
+        VEP web annotation table.
+    """
+
+    if not os.path.exists(
+        vep_output_file
+    ):
+        raise FileNotFoundError(
+            "VEP fallback file was not found:\n"
+            f"{vep_output_file}"
+        )
+
+    fallback_df = pd.read_excel(
+        vep_output_file
+    )
+
+    if fallback_df.empty:
+        raise ValueError(
+            "The VEP fallback file is empty:\n"
+            f"{vep_output_file}"
+        )
+
+    return fallback_df
+
+
+# ============================================================
+# NORMALISE HGVS VALUES
+# ============================================================
+
+def normalise_hgvs(
+    value
+) -> str:
+    """
+    Normalise an HGVS value for matching.
+
+    Parameters
+    ----------
+    value : object
+        HGVS value.
+
+    Returns
+    -------
+    str
+        Normalised HGVS string.
+    """
+
+    if pd.isna(value):
+        return ""
+
+    return (
+        str(value)
+        .strip()
+        .replace(" ", "")
+    )
+
+
+# ============================================================
+# MATCH FALLBACK ANNOTATION
+# ============================================================
+
+def find_web_annotation(
+    hgvs: str,
+    fallback_df: pd.DataFrame
+) -> dict | None:
+    """
+    Find a matching variant in the VEP web-exported table.
+
+    The function attempts to match against common HGVS columns.
+
+    Parameters
+    ----------
+    hgvs : str
+        HGVS cDNA identifier.
+
+    fallback_df : pandas.DataFrame
+        VEP web annotation table.
+
+    Returns
+    -------
+    dict or None
+        Matching annotation or None.
+    """
+
+    target = normalise_hgvs(
+        hgvs
+    )
+
+    if not target:
+        return None
+
+    # --------------------------------------------------------
+    # Candidate HGVS columns
+    # --------------------------------------------------------
+
+    candidate_columns = [
+        "HGVS_cDNA",
+        "HGVSc",
+        "HGVSc",
+        "Uploaded_variation",
+        "Input",
+        "Variant"
+    ]
+
+    available_columns = [
+        column
+        for column in candidate_columns
+        if column in fallback_df.columns
+    ]
+
+    # --------------------------------------------------------
+    # Search each candidate column
+    # --------------------------------------------------------
+
+    for column in available_columns:
+
+        normalised_values = (
+            fallback_df[column]
+            .map(normalise_hgvs)
+        )
+
+        matches = fallback_df[
+            normalised_values == target
+        ]
+
+        if not matches.empty:
+
+            return (
+                matches.iloc[0]
+                .to_dict()
+            )
+
+    # --------------------------------------------------------
+    # Additional fallback:
+    # search entire row text
+    # --------------------------------------------------------
+
+    for _, row in fallback_df.iterrows():
+
+        row_values = [
+            normalise_hgvs(value)
+            for value in row.tolist()
+        ]
+
+        if target in row_values:
+
+            return row.to_dict()
+
+    return None
+
+
+# ============================================================
+# MERGE API AND WEB ANNOTATION
+# ============================================================
+
+def merge_web_fallback(
+    api_annotation: dict,
+    web_annotation: dict,
+    http_status
+) -> dict:
+    """
+    Merge a VEP web annotation into a failed API annotation.
+
+    Existing API values are retained where present.
+    Web values are used to fill missing fields.
+
+    Parameters
+    ----------
+    api_annotation : dict
+        Existing API annotation record.
+
+    web_annotation : dict
+        Matching VEP web annotation.
+
+    http_status : int or None
+        HTTP status from API request.
+
+    Returns
+    -------
+    dict
+        Recovered annotation.
+    """
+
+    recovered = dict(
+        api_annotation
+    )
+
+    # --------------------------------------------------------
+    # Direct field mappings
+    # --------------------------------------------------------
+
+    field_mapping = {
+
+        "Consequence":
+            [
+                "Consequence",
+                "Consequence",
+                "consequence"
+            ],
+
+        "Impact":
+            [
+                "Impact",
+                "IMPACT",
+                "impact"
+            ],
+
+        "HGVSc":
+            [
+                "HGVSc",
+                "HGVS_cDNA",
+                "HGVSc"
+            ],
+
+        "HGVSp":
+            [
+                "HGVSp",
+                "Protein_HGVS",
+                "HGVSp"
+            ],
+
+        "Protein_HGVS":
+            [
+                "Protein_HGVS",
+                "HGVSp"
+            ],
+
+        "Gene_Symbol":
+            [
+                "Gene_Symbol",
+                "SYMBOL",
+                "Gene"
+            ],
+
+        "Gene_ID":
+            [
+                "Gene_ID",
+                "Gene"
+            ],
+
+        "Transcript_ID":
+            [
+                "Transcript_ID",
+                "Feature"
+            ],
+
+        "Assembly":
+            [
+                "Assembly",
+                "ASSEMBLY"
+            ],
+
+        "Chromosome":
+            [
+                "Chromosome",
+                "Location"
+            ],
+
+        "Genomic_Position":
+            [
+                "Genomic_Position",
+                "Position"
+            ],
+
+        "Genomic_Coordinate":
+            [
+                "Genomic_Coordinate",
+                "Location"
+            ],
+
+        "Protein_ID":
+            [
+                "Protein_ID",
+                "Protein"
+            ],
+
+        "Protein_Position":
+            [
+                "Protein_Position"
+            ],
+
+        "Amino_Acid_Change":
+            [
+                "Amino_Acid_Change",
+                "Amino_acids"
+            ],
+
+        "Codon_Change":
+            [
+                "Codon_Change",
+                "Codons"
+            ],
+
+        "Variant_Allele":
+            [
+                "Variant_Allele",
+                "Allele"
+            ]
+    }
+
+    # --------------------------------------------------------
+    # Fill missing API values from web annotation
+    # --------------------------------------------------------
+
+    for target_field, source_fields in (
+        field_mapping.items()
+    ):
+
+        current_value = recovered.get(
+            target_field
+        )
+
+        current_missing = (
+            current_value is None
+            or pd.isna(current_value)
+            or str(current_value).strip()
+            in {"", "nan", "None"}
+        )
+
+        if not current_missing:
+            continue
+
+        for source_field in source_fields:
+
+            if source_field not in web_annotation:
+                continue
+
+            value = web_annotation.get(
+                source_field
+            )
+
+            if (
+                value is not None
+                and not pd.isna(value)
+                and str(value).strip()
+                not in {"", "nan", "None"}
+            ):
+                recovered[target_field] = value
+                break
+
+    # --------------------------------------------------------
+    # Final metadata
+    # --------------------------------------------------------
+
+    recovered["HGVS_cDNA"] = api_annotation.get(
+        "HGVS_cDNA"
+    )
+
+    recovered["Status"] = (
+        "Annotated"
+    )
+
+    recovered["Annotation_Source"] = (
+        "VEP_web_fallback"
+    )
+
+    recovered["HTTP_Status"] = (
+        http_status
+    )
+
+    return recovered
+
+
+# ============================================================
 # ENSEMBL VEP ANNOTATION
-# ======================================================
+# ============================================================
 
 def annotate_variants(
     hgvs_df: pd.DataFrame,
@@ -438,60 +663,95 @@ def annotate_variants(
     timeout: int = 30,
     retries: int = 3,
     delay: float = 0.1,
-    transcript: str = None
+    transcript: str = None,
+    fallback_file: str = None
 ) -> pd.DataFrame:
     """
     Annotate validated variants using the Ensembl VEP REST API.
 
+    Failed API annotations are optionally recovered from an
+    existing VEP web-exported Excel file.
+
     Parameters
     ----------
     hgvs_df : pandas.DataFrame
-        DataFrame containing validated variants and HGVS cDNA
-        identifiers.
+        DataFrame containing validated HGVS variants.
 
     server : str
         Ensembl REST API server URL.
 
     headers : dict
-        HTTP headers used for VEP API requests.
+        HTTP request headers.
 
     timeout : int
-        Maximum number of seconds allowed for each API request.
+        Request timeout in seconds.
 
     retries : int
-        Maximum number of retry attempts for failed API requests.
+        Maximum number of API attempts.
 
     delay : float
-        Delay in seconds between consecutive API requests.
+        Delay between requests.
 
     transcript : str, optional
-        RefSeq transcript accession used for the analysis.
+        Preferred transcript.
+
+    fallback_file : str, optional
+        Existing VEP web-exported Excel file.
 
     Returns
     -------
     pandas.DataFrame
-        Annotated variant table containing VEP consequences,
-        transcript information, HGVSc, HGVSp, gene information,
-        variant class, genomic coordinates, and other available
-        VEP annotations.
+        Annotation table.
     """
-
-    annotation_rows = []
-
-    # --------------------------------------------------
-    # Validate input
-    # --------------------------------------------------
 
     if "HGVS_cDNA" not in hgvs_df.columns:
 
         raise ValueError(
             "Input HGVS table must contain "
-            "'HGVS_cDNA' column."
+            "'HGVS_cDNA'."
         )
 
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Load fallback annotation if available
+    # --------------------------------------------------------
+
+    fallback_df = None
+
+    if fallback_file:
+
+        if os.path.exists(
+            fallback_file
+        ):
+
+            print(
+                "      VEP web fallback available:"
+            )
+
+            print(
+                f"      {fallback_file}"
+            )
+
+            fallback_df = (
+                load_vep_web_fallback(
+                    fallback_file
+                )
+            )
+
+        else:
+
+            print(
+                "      VEP web fallback file not found."
+            )
+
+            print(
+                f"      {fallback_file}"
+            )
+
+    annotation_rows = []
+
+    # ========================================================
     # Process variants
-    # --------------------------------------------------
+    # ========================================================
 
     for _, row in hgvs_df.iterrows():
 
@@ -506,9 +766,13 @@ def annotate_variants(
             if not hgvs:
                 continue
 
-            # ------------------------------------------
-            # Build VEP REST URL
-            # ------------------------------------------
+            print(
+                f"      Annotating: {hgvs}"
+            )
+
+            # ------------------------------------------------
+            # Build API URL
+            # ------------------------------------------------
 
             encoded_hgvs = quote(
                 hgvs,
@@ -523,20 +787,20 @@ def annotate_variants(
 
             response = None
 
-            # ------------------------------------------
+            # ------------------------------------------------
             # API request with retry
-            # ------------------------------------------
+            # ------------------------------------------------
 
-            for attempt in range(retries):
+            for attempt in range(
+                1,
+                retries + 1
+            ):
 
                 try:
 
                     response = requests.get(
-
                         url,
-
                         headers=headers,
-
                         params={
                             "hgvs": 1,
                             "mane": 1,
@@ -547,126 +811,184 @@ def annotate_variants(
                             "numbers": 1,
                             "xref_refseq": 1
                         },
-
                         timeout=timeout
                     )
 
                     if response.status_code == 200:
                         break
 
-                except requests.RequestException:
+                    if response.status_code >= 500:
 
-                    response = None
+                        print(
+                            f"      API server error "
+                            f"{response.status_code}; "
+                            f"retry {attempt}/{retries}"
+                        )
 
-                # --------------------------------------
-                # Retry delay
-                # --------------------------------------
+                    else:
 
-                if attempt < retries - 1:
-                    time.sleep(1)
+                        print(
+                            f"      API returned "
+                            f"HTTP {response.status_code}"
+                        )
 
-            # ------------------------------------------
-            # Failed request
-            # ------------------------------------------
+                except requests.RequestException as exc:
+
+                    print(
+                        f"      API request error: "
+                        f"{exc}"
+                    )
+
+                if attempt < retries:
+
+                    time.sleep(
+                        min(
+                            2 ** attempt,
+                            10
+                        )
+                    )
+
+            # ------------------------------------------------
+            # API succeeded
+            # ------------------------------------------------
 
             if (
-                response is None
-                or response.status_code != 200
+                response is not None
+                and response.status_code == 200
             ):
 
-                status_code = (
-                    response.status_code
-                    if response is not None
-                    else None
+                try:
+
+                    results = response.json()
+
+                except ValueError:
+
+                    results = []
+
+                    print(
+                        "      API returned invalid JSON."
+                    )
+
+                if results:
+
+                    annotation = (
+                        parse_vep_response(
+                            hgvs,
+                            results[0]
+                        )
+                    )
+
+                    annotation["HTTP_Status"] = (
+                        response.status_code
+                    )
+
+                    annotation["Annotation_Source"] = (
+                        "VEP_API"
+                    )
+
+                    annotation_rows.append(
+                        annotation
+                    )
+
+                    time.sleep(
+                        delay
+                    )
+
+                    continue
+
+                print(
+                    "      API returned an empty result."
                 )
 
-                annotation_rows.append({
+            # ------------------------------------------------
+            # API failed
+            # ------------------------------------------------
 
-                    "HGVS_cDNA": hgvs,
-
-                    "Status": "Failed",
-
-                    "HTTP_Status": status_code
-
-                })
-
-                continue
-
-            # ------------------------------------------
-            # Parse JSON
-            # ------------------------------------------
-
-            try:
-
-                results = response.json()
-
-            except ValueError:
-
-                annotation_rows.append({
-
-                    "HGVS_cDNA": hgvs,
-
-                    "Status": "Invalid_JSON"
-
-                })
-
-                continue
-
-            # ------------------------------------------
-            # Empty result
-            # ------------------------------------------
-
-            if not results:
-
-                annotation_rows.append({
-
-                    "HGVS_cDNA": hgvs,
-
-                    "Status": "Not_Found"
-
-                })
-
-                continue
-
-            # ------------------------------------------
-            # VEP returns a list of variant objects
-            # ------------------------------------------
-
-            result = results[0]
-
-            annotation = parse_vep_response(
-                hgvs,
-                result
-            )
-
-            # Preserve HTTP status for
-            # troubleshooting/reproducibility.
-
-            annotation["HTTP_Status"] = (
+            status_code = (
                 response.status_code
+                if response is not None
+                else None
             )
+
+            print(
+                f"      API annotation failed "
+                f"for {hgvs}."
+            )
+
+            # ------------------------------------------------
+            # Try VEP web fallback
+            # ------------------------------------------------
+
+            if fallback_df is not None:
+
+                web_annotation = (
+                    find_web_annotation(
+                        hgvs,
+                        fallback_df
+                    )
+                )
+
+                if web_annotation is not None:
+
+                    print(
+                        "      Web VEP fallback matched."
+                    )
+
+                    recovered = merge_web_fallback(
+                        {
+                            "HGVS_cDNA": hgvs,
+                            "Status": "Failed",
+                            "HTTP_Status": status_code
+                        },
+                        web_annotation,
+                        status_code
+                    )
+
+                    annotation_rows.append(
+                        recovered
+                    )
+
+                    time.sleep(
+                        delay
+                    )
+
+                    continue
+
+                print(
+                    "      No matching web VEP "
+                    "annotation found."
+                )
+
+            # ------------------------------------------------
+            # No annotation available
+            # ------------------------------------------------
 
             annotation_rows.append(
-                annotation
+                {
+                    "HGVS_cDNA": hgvs,
+                    "Status": "Failed",
+                    "HTTP_Status": status_code,
+                    "Annotation_Source": (
+                        "VEP_API_failed"
+                    )
+                }
             )
 
-            # ------------------------------------------
-            # Respect API request delay
-            # ------------------------------------------
+            time.sleep(
+                delay
+            )
 
-            time.sleep(delay)
-
-    # --------------------------------------------------
-    # Construct annotation DataFrame
-    # --------------------------------------------------
+    # ========================================================
+    # Construct DataFrame
+    # ========================================================
 
     annotation_df = pd.DataFrame(
         annotation_rows
     )
 
-    # --------------------------------------------------
-    # Remove duplicate HGVS entries
-    # --------------------------------------------------
+    # --------------------------------------------------------
+    # Remove duplicate HGVS records
+    # --------------------------------------------------------
 
     if not annotation_df.empty:
 
@@ -682,46 +1004,45 @@ def annotate_variants(
 
     return annotation_df
 
-# ======================================================
-# SAVE TABLE
-# ======================================================
+
+# ============================================================
+# SAVE ANNOTATION TABLE
+# ============================================================
 
 def save_annotation_table(
     annotation_df: pd.DataFrame,
     output_folder: str
 ):
     """
-    Save Ensembl VEP annotation table.
+    Save VEP annotation table.
 
     Parameters
     ----------
     annotation_df : pandas.DataFrame
+        Annotation results.
 
     output_folder : str
+        Output directory.
+
+    Returns
+    -------
+    str
+        Path to saved file.
     """
 
     os.makedirs(
-
         output_folder,
-
         exist_ok=True
-
     )
 
     output_file = os.path.join(
-
         output_folder,
-
         "Ensembl_VEP_Annotation.csv"
-
     )
 
     annotation_df.to_csv(
-
         output_file,
-
         index=False
-
     )
 
     return output_file

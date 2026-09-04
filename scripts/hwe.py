@@ -6,8 +6,9 @@ import pandas as pd
 
 # =========================================================
 # Exact Hardy-Weinberg Equilibrium
-# Wigginton et al. (2005) algorithm
+# Wigginton et al. (2005)
 # =========================================================
+
 
 def exact_hwe_wigginton(
     obs_hom1: int,
@@ -15,9 +16,36 @@ def exact_hwe_wigginton(
     obs_hom2: int
 ) -> float:
     """
-    Calculate the exact Hardy-Weinberg equilibrium
-    P-value using the Wigginton et al. (2005) algorithm.
+    Calculate the exact Hardy-Weinberg equilibrium P-value
+    using the Wigginton et al. (2005) algorithm.
+
+    Parameters
+    ----------
+    obs_hom1 : int
+        Number of homozygous reference individuals.
+
+    obs_het : int
+        Number of heterozygous individuals.
+
+    obs_hom2 : int
+        Number of homozygous alternate individuals.
+
+    Returns
+    -------
+    float
+        Exact HWE P-value.
+
+        Returns NaN if no genotype observations are available.
     """
+
+    if min(
+        obs_hom1,
+        obs_het,
+        obs_hom2
+    ) < 0:
+        raise ValueError(
+            "Genotype counts cannot be negative."
+        )
 
     obs_homc = max(
         obs_hom1,
@@ -44,7 +72,8 @@ def exact_hwe_wigginton(
         return np.nan
 
     probs = np.zeros(
-        rare + 1
+        rare + 1,
+        dtype=float
     )
 
     mid = int(
@@ -95,9 +124,7 @@ def exact_hwe_wigginton(
         total += prob
 
         curr_hets -= 2
-
         curr_homr += 1
-
         curr_homc += 1
 
     # -----------------------------------------------------
@@ -135,9 +162,7 @@ def exact_hwe_wigginton(
         total += prob
 
         curr_hets += 2
-
         curr_homr -= 1
-
         curr_homc -= 1
 
     # -----------------------------------------------------
@@ -146,13 +171,13 @@ def exact_hwe_wigginton(
 
     probs /= total
 
-    p = probs[
+    p_value = probs[
         probs <= probs[obs_het]
     ].sum()
 
     return min(
         1.0,
-        p
+        p_value
     )
 
 
@@ -160,17 +185,52 @@ def exact_hwe_wigginton(
 # Prepare control genotypes
 # =========================================================
 
+
 def prepare_control_genotypes(
     genotype_df: pd.DataFrame,
-    control_samples: set
+    control_samples: set,
+    min_phred: int = 20
 ) -> pd.DataFrame:
     """
-    Prepare control genotypes for
-    Hardy-Weinberg equilibrium analysis.
+    Prepare high-confidence control genotypes for HWE analysis.
 
-    Only control samples are retained and
-    low-confidence heterozygotes are removed.
+    Only control samples with valid genotype calls and
+    sufficient sequencing quality are retained.
+
+    Parameters
+    ----------
+    genotype_df : pandas.DataFrame
+        Genotype calls.
+
+    control_samples : set
+        Sample identifiers classified as controls.
+
+    min_phred : int, default=20
+        Minimum Phred quality threshold.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Filtered control genotype calls.
     """
+
+    required_columns = {
+        "Sample",
+        "cDNA_Position",
+        "Genotype",
+        "Quality"
+    }
+
+    missing_columns = (
+        required_columns
+        - set(genotype_df.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            "Missing required genotype columns: "
+            f"{sorted(missing_columns)}"
+        )
 
     control_df = genotype_df[
         genotype_df["Sample"].isin(
@@ -178,9 +238,30 @@ def prepare_control_genotypes(
         )
     ].copy()
 
+    control_df["Quality"] = pd.to_numeric(
+        control_df["Quality"],
+        errors="coerce"
+    )
+
+    control_df["Genotype"] = pd.to_numeric(
+        control_df["Genotype"],
+        errors="coerce"
+    )
+
+    # Keep only genotype calls meeting the
+    # minimum sequencing-quality threshold.
     control_df = control_df[
-        control_df["Zygosity"]
-        != "LowConfidence_Heterozygous"
+        control_df["Quality"] >= min_phred
+    ].copy()
+
+    # Keep only valid diploid genotype classifications:
+    # 0 = homozygous reference
+    # 1 = heterozygous
+    # 2 = homozygous alternate
+    control_df = control_df[
+        control_df["Genotype"].isin(
+            [0, 1, 2]
+        )
     ].copy()
 
     return control_df
@@ -190,78 +271,158 @@ def prepare_control_genotypes(
 # Calculate HWE for one variant
 # =========================================================
 
+
 def calculate_variant_hwe(
-    variant,
-    control_df
-):
+    variant: pd.Series,
+    control_df: pd.DataFrame
+) -> dict:
     """
-    Calculate exact Hardy-Weinberg equilibrium
-    for a single variant.
+    Calculate exact HWE for a single variant.
+
+    Genotypes are matched using transcript position,
+    reference allele and alternate allele where available.
+
+    HWE is calculated using callable control genotypes only.
     """
 
-    pos = variant[
+    position = variant[
         "Transcript_Position"
     ]
 
     subset = control_df[
-        control_df["cDNA_Position"] == pos
-    ]
+        control_df["cDNA_Position"] == position
+    ].copy()
+
+    # -----------------------------------------------------
+    # Match REF/ALT where these columns are available
+    # -----------------------------------------------------
+
+    if (
+        "REF" in variant.index
+        and "ALT" in variant.index
+        and "REF" in control_df.columns
+        and "ALT" in control_df.columns
+    ):
+
+        ref = variant["REF"]
+        alt = variant["ALT"]
+
+        if pd.notna(ref) and pd.notna(alt):
+
+            subset = subset[
+                (
+                    subset["REF"].astype(str)
+                    == str(ref)
+                )
+                & (
+                    subset["ALT"].astype(str)
+                    == str(alt)
+                )
+            ]
+
+    # -----------------------------------------------------
+    # Remove duplicate calls per sample
+    #
+    # Keep the highest-quality genotype call if multiple
+    # records exist for the same sample and variant.
+    # -----------------------------------------------------
+
+    if not subset.empty:
+
+        subset = subset.sort_values(
+            "Quality",
+            ascending=False
+        )
+
+        subset = subset.drop_duplicates(
+            subset=["Sample"],
+            keep="first"
+        )
 
     # -----------------------------------------------------
     # Genotype counts
     # -----------------------------------------------------
 
-    AA = (
-        subset["Genotype"] == 0
-    ).sum()
+    AA = int(
+        (subset["Genotype"] == 0).sum()
+    )
 
-    AB = (
-        subset["Genotype"] == 1
-    ).sum()
+    AB = int(
+        (subset["Genotype"] == 1).sum()
+    )
 
-    BB = (
-        subset["Genotype"] == 2
-    ).sum()
+    BB = int(
+        (subset["Genotype"] == 2).sum()
+    )
+
+    controls = (
+        AA
+        + AB
+        + BB
+    )
+
+    # -----------------------------------------------------
+    # HWE note
+    # -----------------------------------------------------
+
+    if controls == 0:
+        variant_label = variant.get(
+            "HGVS_cDNA",
+            "unknown variant"
+        )
+
+        print(
+            "WARNING: No callable control genotypes were "
+            f"available for {variant_label}. "
+            "HWE is not estimable."
+        )
+
+        hwe_note = (
+            "No callable control genotypes available "
+            "after quality filtering."
+        )
+    else:
+        hwe_note = ""
 
     # -----------------------------------------------------
     # Exact HWE test
     # -----------------------------------------------------
 
-    p = exact_hwe_wigginton(
+    p_value = exact_hwe_wigginton(
         AA,
         AB,
         BB
     )
 
     # -----------------------------------------------------
+    # Interpretation
+    # -----------------------------------------------------
+
+    if pd.isna(p_value):
+
+        hwe_status = "Not estimable"
+
+    elif p_value < 0.05:
+
+        hwe_status = "Deviation"
+
+    else:
+
+        hwe_status = "In Equilibrium"
+
+    # -----------------------------------------------------
     # Return result
     # -----------------------------------------------------
 
     return {
-
-        "Transcript_Position": pos,
-
-        "Controls": (
-            AA + AB + BB
-        ),
-
+        "Transcript_Position": position,
+        "Controls": controls,
         "AA": AA,
-
         "AB": AB,
-
         "BB": BB,
-
-        "Exact_HWE_P": p,
-
-        "HWE_Status":
-            (
-                "In Equilibrium"
-                if (
-                    pd.notna(p)
-                    and p >= 0.05
-                )
-                else "Deviation"
-            )
+        "Exact_HWE_P": p_value,
+        "HWE_Status": hwe_status,
+        "HWE_Note": hwe_note
     }
 
 
@@ -269,14 +430,18 @@ def calculate_variant_hwe(
 # Run HWE analysis
 # =========================================================
 
+
 def run_hwe_analysis(
-    final_df,
-    control_df
-):
+    final_df: pd.DataFrame,
+    control_df: pd.DataFrame
+) -> pd.DataFrame:
     """
-    Perform exact Hardy-Weinberg equilibrium
-    analysis for every variant.
+    Perform exact HWE analysis for every variant.
     """
+
+    if final_df.empty:
+
+        return pd.DataFrame()
 
     rows = []
 
@@ -289,27 +454,92 @@ def run_hwe_analysis(
             )
         )
 
-    return pd.DataFrame(
-        rows
-    )
+    return pd.DataFrame(rows)
+
+
+# =========================================================
+# Create stable variant key
+# =========================================================
+
+
+def add_variant_key(
+    df: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Create a stable variant key from transcript position,
+    reference allele and alternate allele.
+    """
+
+    df = df.copy()
+
+    required = {
+        "Transcript_Position",
+        "REF",
+        "ALT"
+    }
+
+    if required.issubset(df.columns):
+
+        df["Variant_Key"] = (
+            df["Transcript_Position"]
+            .astype(str)
+            + ":"
+            + df["REF"].astype(str)
+            + ">"
+            + df["ALT"].astype(str)
+        )
+
+    else:
+
+        df["Variant_Key"] = (
+            df["Transcript_Position"]
+            .astype(str)
+        )
+
+    return df
 
 
 # =========================================================
 # Merge variant annotation
 # =========================================================
 
+
 def merge_variant_annotation(
-    hwe_df,
-    final_df
-):
+    hwe_df: pd.DataFrame,
+    final_df: pd.DataFrame
+) -> pd.DataFrame:
     """
-    Merge HWE results with variant annotation.
+    Merge HWE results with variant annotation using
+    a stable variant key.
     """
 
+    hwe_df = add_variant_key(
+        hwe_df
+    )
+
+    annotation_df = add_variant_key(
+        final_df
+    )
+
+    annotation_columns = [
+        column
+        for column in annotation_df.columns
+        if column != "Variant_Key"
+    ]
+
+    annotation_df = annotation_df[
+        ["Variant_Key"]
+        + annotation_columns
+    ]
+
     hwe_df = hwe_df.merge(
-        final_df,
-        on="Transcript_Position",
-        how="left"
+        annotation_df,
+        on="Variant_Key",
+        how="left",
+        suffixes=(
+            "",
+            "_annotation"
+        )
     )
 
     return hwe_df
@@ -319,15 +549,15 @@ def merge_variant_annotation(
 # Reorder HWE columns
 # =========================================================
 
+
 def reorder_hwe_columns(
-    hwe_df
-):
+    hwe_df: pd.DataFrame
+) -> pd.DataFrame:
     """
-    Reorder HWE results into the
-    final reporting structure.
+    Reorder HWE results into the final reporting structure.
     """
 
-    cols = [
+    columns = [
 
         "Gene",
 
@@ -361,14 +591,16 @@ def reorder_hwe_columns(
 
         "Exact_HWE_P",
 
-        "HWE_Status"
+        "HWE_Status",
+
+        "HWE_Note"
     ]
 
     return hwe_df[
         [
-            c
-            for c in cols
-            if c in hwe_df.columns
+            column
+            for column in columns
+            if column in hwe_df.columns
         ]
     ]
 
@@ -377,12 +609,17 @@ def reorder_hwe_columns(
 # Sort HWE results
 # =========================================================
 
+
 def sort_hwe_results(
-    hwe_df
-):
+    hwe_df: pd.DataFrame
+) -> pd.DataFrame:
     """
     Sort HWE results by transcript position.
     """
+
+    if hwe_df.empty:
+
+        return hwe_df
 
     return hwe_df.sort_values(
         "Transcript_Position"
@@ -395,24 +632,37 @@ def sort_hwe_results(
 # Complete HWE analysis pipeline
 # =========================================================
 
+
 def generate_hwe_results(
-    final_df,
-    genotype_df,
-    control_samples
-):
+    final_df: pd.DataFrame,
+    genotype_df: pd.DataFrame,
+    control_samples: set,
+    min_phred: int = 20
+) -> pd.DataFrame:
     """
     Generate the complete HWE results table.
+
+    HWE is evaluated in controls only.
+
+    Only genotype calls meeting the minimum Phred
+    quality threshold and having valid genotype
+    classifications are included.
     """
 
     control_df = prepare_control_genotypes(
         genotype_df,
-        control_samples
+        control_samples,
+        min_phred=min_phred
     )
 
     hwe_df = run_hwe_analysis(
         final_df,
         control_df
     )
+
+    if hwe_df.empty:
+
+        return hwe_df
 
     hwe_df = merge_variant_annotation(
         hwe_df,
@@ -433,6 +683,7 @@ def generate_hwe_results(
 # =========================================================
 # Save HWE results
 # =========================================================
+
 
 def save_hwe_results(
     hwe_df: pd.DataFrame,

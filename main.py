@@ -1,6 +1,4 @@
 """
-main.py
-
 Main entry point for the SangerSeq Variant Pipeline.
 
 Pipeline workflow
@@ -24,6 +22,8 @@ Pipeline workflow
 """
 
 import os
+
+import pandas as pd
 
 from config import (
     AB1_FOLDER,
@@ -132,6 +132,7 @@ from scripts.association import (
     create_sample_sets,
     run_association_analysis,
     apply_multiple_testing,
+    sort_association_results,
     save_association_results
 )
 
@@ -144,6 +145,362 @@ from scripts.hwe import (
     run_hwe_analysis,
     save_hwe_results
 )
+
+
+# =========================================================
+# Utility functions
+# =========================================================
+
+def _require_nonempty(
+    dataframe,
+    name,
+    context
+):
+    """
+    Stop the pipeline when a required DataFrame
+    is unexpectedly empty.
+    """
+
+    if dataframe is None:
+        raise ValueError(
+            f"{context}: {name} is None. "
+            "The previous pipeline step did not return "
+            "a valid DataFrame."
+        )
+
+    if not isinstance(dataframe, pd.DataFrame):
+        raise TypeError(
+            f"{context}: {name} must be a pandas DataFrame, "
+            f"got {type(dataframe).__name__}."
+        )
+
+    if dataframe.empty:
+        raise ValueError(
+            f"{context}: {name} is empty. "
+            "The pipeline cannot continue because no "
+            "records are available."
+        )
+
+
+def _validate_phenotype_data(
+    phenotype_df
+):
+    """
+    Validate the phenotype/sample-group table.
+
+    The pipeline is intentionally sample-size agnostic.
+    Therefore, this function validates the required
+    structure rather than expecting a specific number
+    of samples.
+    """
+
+    required_columns = {
+        "Sample",
+        "Group"
+    }
+
+    missing_columns = (
+        required_columns
+        - set(phenotype_df.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            "Phenotype file is missing required columns: "
+            f"{sorted(missing_columns)}"
+        )
+
+    if phenotype_df.empty:
+        raise ValueError(
+            "The phenotype/sample-group file is empty."
+        )
+
+    phenotype_df = phenotype_df.copy()
+
+    phenotype_df["Sample"] = (
+        phenotype_df["Sample"]
+        .astype(str)
+        .str.strip()
+    )
+
+    phenotype_df["Group"] = (
+        phenotype_df["Group"]
+        .astype(str)
+        .str.strip()
+    )
+
+    if phenotype_df["Sample"].eq("").any():
+        raise ValueError(
+            "The phenotype file contains empty sample IDs."
+        )
+
+    valid_groups = {
+        "Case",
+        "Control"
+    }
+
+    observed_groups = set(
+        phenotype_df["Group"].unique()
+    )
+
+    unexpected_groups = (
+        observed_groups
+        - valid_groups
+    )
+
+    if unexpected_groups:
+        raise ValueError(
+            "Unexpected phenotype groups detected: "
+            f"{sorted(unexpected_groups)}. "
+            "Expected only 'Case' and 'Control'."
+        )
+
+    duplicated_samples = (
+        phenotype_df["Sample"]
+        [phenotype_df["Sample"].duplicated()]
+        .unique()
+    )
+
+    if len(duplicated_samples) > 0:
+        raise ValueError(
+            "Duplicate sample IDs detected in the "
+            "phenotype file: "
+            f"{sorted(duplicated_samples)}"
+        )
+
+    case_count = (
+        phenotype_df["Group"]
+        .eq("Case")
+        .sum()
+    )
+
+    control_count = (
+        phenotype_df["Group"]
+        .eq("Control")
+        .sum()
+    )
+
+    if case_count == 0:
+        raise ValueError(
+            "The phenotype file contains no Case samples."
+        )
+
+    if control_count == 0:
+        raise ValueError(
+            "The phenotype file contains no Control samples."
+        )
+
+    return phenotype_df
+
+
+def _validate_hgvs_input(
+    summary_df,
+    variant_df
+):
+    """
+    Validate the invariant between the variant summary
+    and genotype calls.
+
+    Every row in summary_df is generated from variant_df.
+    Therefore, each summary variant must have at least
+    one exact matching high-confidence genotype call.
+    """
+
+    required_summary = {
+        "cDNA_Position",
+        "REF",
+        "ALT"
+    }
+
+    required_variants = {
+        "cDNA_Position",
+        "REF",
+        "ALT",
+        "Sample",
+        "Quality",
+        "Alignment_Score"
+    }
+
+    missing_summary = (
+        required_summary
+        - set(summary_df.columns)
+    )
+
+    missing_variants = (
+        required_variants
+        - set(variant_df.columns)
+    )
+
+    if missing_summary:
+        raise ValueError(
+            "HGVS validation failed: summary_df is missing "
+            "columns: "
+            f"{sorted(missing_summary)}"
+        )
+
+    if missing_variants:
+        raise ValueError(
+            "HGVS validation failed: variant_df is missing "
+            "columns: "
+            f"{sorted(missing_variants)}"
+        )
+
+    def normalise_series(series):
+        return (
+            series
+            .astype(str)
+            .str.strip()
+            .str.upper()
+        )
+
+    summary_positions = pd.to_numeric(
+        summary_df["cDNA_Position"],
+        errors="coerce"
+    )
+
+    variant_positions = pd.to_numeric(
+        variant_df["cDNA_Position"],
+        errors="coerce"
+    )
+
+    summary_ref = normalise_series(
+        summary_df["REF"]
+    )
+
+    summary_alt = normalise_series(
+        summary_df["ALT"]
+    )
+
+    variant_ref = normalise_series(
+        variant_df["REF"]
+    )
+
+    variant_alt = normalise_series(
+        variant_df["ALT"]
+    )
+
+    unmatched = []
+
+    for index in summary_df.index:
+
+        position = summary_positions.loc[index]
+        ref = summary_ref.loc[index]
+        alt = summary_alt.loc[index]
+
+        matches = (
+            (variant_positions == position)
+            & (variant_ref == ref)
+            & (variant_alt == alt)
+        )
+
+        if not matches.any():
+
+            if pd.notna(position):
+
+                position_text = f"{position:g}"
+
+            else:
+
+                position_text = str(position)
+
+            unmatched.append(
+                f"{position_text} {ref}>{alt}"
+            )
+
+    if unmatched:
+        raise ValueError(
+            "HGVS validation failed: the following summary "
+            "variants have no exact matching records in "
+            "variant_df: "
+            + ", ".join(unmatched)
+            + ". This indicates an upstream "
+            "data-integrity mismatch."
+        )
+
+
+def _print_variant_diagnostics(
+    summary_df,
+    variant_df
+):
+    """
+    Print concise diagnostics for variant-to-HGVS matching.
+    """
+
+    print()
+    print(
+        "      Variant-to-HGVS diagnostic check"
+    )
+    print(
+        "      --------------------------------"
+    )
+
+    if summary_df.empty:
+
+        print(
+            "      Variant summary: EMPTY"
+        )
+
+        return
+
+    print(
+        f"      Variant summary rows : "
+        f"{len(summary_df)}"
+    )
+
+    print(
+        f"      Variant call rows    : "
+        f"{len(variant_df)}"
+    )
+
+    for _, row in summary_df.iterrows():
+
+        position = row["cDNA_Position"]
+
+        ref = (
+            str(row["REF"])
+            .strip()
+            .upper()
+        )
+
+        alt = (
+            str(row["ALT"])
+            .strip()
+            .upper()
+        )
+
+        positions = pd.to_numeric(
+            variant_df["cDNA_Position"],
+            errors="coerce"
+        )
+
+        matches = variant_df[
+            (
+                positions
+                == pd.to_numeric(
+                    position,
+                    errors="coerce"
+                )
+            )
+            & (
+                variant_df["REF"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                == ref
+            )
+            & (
+                variant_df["ALT"]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+                == alt
+            )
+        ]
+
+        print(
+            f"      {position} {ref}>{alt}: "
+            f"{len(matches)} matching genotype call(s)"
+        )
 
 
 # =========================================================
@@ -162,20 +519,25 @@ def main():
     # 1. LOAD ABI CHROMATOGRAMS
     # =====================================================
 
-    print("[1/16] Loading ABI chromatograms...")
+    print(
+        "[1/16] Loading ABI chromatograms..."
+    )
 
     abi_records = load_ab1_files(
         AB1_FOLDER
     )
 
     if not abi_records:
+
         raise ValueError(
             "No ABI chromatograms were loaded. "
-            f"Please check the input directory: {AB1_FOLDER}"
+            f"Please check the input directory: "
+            f"{AB1_FOLDER}"
         )
 
     print(
-        f"      Loaded {len(abi_records)} ABI chromatograms."
+        f"      Loaded {len(abi_records)} "
+        "ABI chromatograms."
     )
 
     # =====================================================
@@ -183,19 +545,23 @@ def main():
     # =====================================================
 
     print()
-    print("[2/16] Preparing sequencing reads...")
+    print(
+        "[2/16] Preparing sequencing reads..."
+    )
 
     processed_reads = prepare_reads(
         abi_records
     )
 
     if not processed_reads:
+
         raise ValueError(
             "No sequencing reads were successfully prepared."
         )
 
     print(
-        f"      Prepared {len(processed_reads)} sequencing reads."
+        f"      Prepared {len(processed_reads)} "
+        "sequencing reads."
     )
 
     # =====================================================
@@ -203,7 +569,9 @@ def main():
     # =====================================================
 
     print()
-    print("[3/16] Calculating sequencing quality metrics...")
+    print(
+        "[3/16] Calculating sequencing quality metrics..."
+    )
 
     qc_summary = calculate_qc_metrics(
         processed_reads
@@ -223,7 +591,9 @@ def main():
     # =====================================================
 
     print()
-    print("[4/16] Loading reference transcript...")
+    print(
+        "[4/16] Loading reference transcript..."
+    )
 
     reference_sequence = download_reference(
         REFSEQ_ID,
@@ -231,12 +601,14 @@ def main():
     )
 
     if not reference_sequence:
+
         raise ValueError(
             "Reference sequence could not be retrieved."
         )
 
     print(
-        f"      Reference transcript: {REFSEQ_ID}"
+        f"      Reference transcript: "
+        f"{REFSEQ_ID}"
     )
 
     # =====================================================
@@ -244,7 +616,9 @@ def main():
     # =====================================================
 
     print()
-    print("[5/16] Verifying PCR primers...")
+    print(
+        "[5/16] Verifying PCR primers..."
+    )
 
     primer_information = verify_primers(
         reference_sequence,
@@ -253,6 +627,7 @@ def main():
     )
 
     if not primer_information:
+
         raise ValueError(
             "PCR primer verification failed."
         )
@@ -278,7 +653,9 @@ def main():
     # =====================================================
 
     print()
-    print("[6/16] Performing local sequence alignment...")
+    print(
+        "[6/16] Performing local sequence alignment..."
+    )
 
     alignments = perform_local_alignment(
         processed_reads,
@@ -286,13 +663,15 @@ def main():
     )
 
     if not alignments:
+
         raise ValueError(
             "No sequencing reads could be aligned "
             "to the reference amplicon."
         )
 
     print(
-        f"      Successfully aligned {len(alignments)} reads."
+        f"      Successfully aligned "
+        f"{len(alignments)} reads."
     )
 
     # =====================================================
@@ -300,7 +679,10 @@ def main():
     # =====================================================
 
     print()
-    print("[7/16] Generating nucleotide-level alignment table...")
+    print(
+        "[7/16] Generating nucleotide-level "
+        "alignment table..."
+    )
 
     alignment_df = walk_alignment(
         alignments,
@@ -310,12 +692,14 @@ def main():
     )
 
     if alignment_df.empty:
+
         raise ValueError(
             "The alignment table is empty."
         )
 
     print(
-        f"      Generated {len(alignment_df)} alignment records."
+        f"      Generated {len(alignment_df)} "
+        "alignment records."
     )
 
     # =====================================================
@@ -323,7 +707,9 @@ def main():
     # =====================================================
 
     print()
-    print("[8/16] Calling genotypes...")
+    print(
+        "[8/16] Calling genotypes..."
+    )
 
     genotype_df = call_genotypes(
         alignment_df,
@@ -331,6 +717,7 @@ def main():
     )
 
     if genotype_df.empty:
+
         raise ValueError(
             "No genotype calls were generated."
         )
@@ -344,7 +731,8 @@ def main():
     )
 
     print(
-        f"      Generated {len(genotype_df)} genotype records."
+        f"      Generated {len(genotype_df)} "
+        "genotype records."
     )
 
     # =====================================================
@@ -352,13 +740,28 @@ def main():
     # =====================================================
 
     print()
-    print("[9/16] Filtering high-confidence variants...")
+    print(
+        "[9/16] Filtering high-confidence variants..."
+    )
 
-    high_confidence_df, variant_df = (
-        filter_high_confidence_variants(
-            genotype_df,
-            MIN_PHRED
-        )
+    (
+        high_confidence_df,
+        variant_df
+    ) = filter_high_confidence_variants(
+        genotype_df,
+        MIN_PHRED
+    )
+
+    print("\nDEBUG: confirmed variant_df columns:")
+    print(variant_df.columns.tolist())
+
+    print("\nDEBUG: confirmed variant_df:")
+    print(variant_df.to_string(index=False))
+
+    _require_nonempty(
+        high_confidence_df,
+        "high_confidence_df",
+        "Step 9"
     )
 
     save_variants(
@@ -384,23 +787,29 @@ def main():
     # =====================================================
 
     print()
-    print("[10/16] Summarising variants...")
+    print(
+        "[10/16] Summarising variants..."
+    )
 
     if variant_df.empty:
 
-        print(
-            "      No variants detected."
+        raise ValueError(
+            "Step 10: No high-confidence variants "
+            "were detected. The pipeline cannot "
+            "generate HGVS nomenclature or a final "
+            "variant table. Review sequencing quality, "
+            "alignment, genotype calls, and MIN_PHRED."
         )
 
-        summary_df = summarize_variants(
-            variant_df
-        )
+    summary_df = summarize_variants(
+        variant_df
+    )
 
-    else:
-
-        summary_df = summarize_variants(
-            variant_df
-        )
+    _require_nonempty(
+        summary_df,
+        "summary_df",
+        "Step 10"
+    )
 
     save_variant_summary(
         summary_df,
@@ -420,29 +829,32 @@ def main():
     # =====================================================
 
     print()
-    print("[11/16] Generating HGVS nomenclature...")
+    print(
+        "[11/16] Generating HGVS nomenclature..."
+    )
 
-    if summary_df.empty:
+    _print_variant_diagnostics(
+        summary_df,
+        variant_df
+    )
 
-        print(
-            "      No variants available for HGVS generation."
-        )
+    _validate_hgvs_input(
+        summary_df,
+        variant_df
+    )
 
-        hgvs_df = generate_hgvs_table(
-            summary_df,
-            variant_df,
-            TRANSCRIPT,
-            CDS_START
-        )
+    hgvs_df = generate_hgvs_table(
+        summary_df,
+        variant_df,
+        TRANSCRIPT,
+        CDS_START
+    )
 
-    else:
-
-        hgvs_df = generate_hgvs_table(
-            summary_df,
-            variant_df,
-            TRANSCRIPT,
-            CDS_START
-        )
+    _require_nonempty(
+        hgvs_df,
+        "hgvs_df",
+        "Step 11"
+    )
 
     save_hgvs_table(
         hgvs_df,
@@ -453,7 +865,8 @@ def main():
     )
 
     print(
-        f"      Generated {len(hgvs_df)} HGVS records."
+        f"      Generated {len(hgvs_df)} "
+        "HGVS records."
     )
 
     # =====================================================
@@ -461,7 +874,9 @@ def main():
     # =====================================================
 
     print()
-    print("[12/16] Performing functional annotation...")
+    print(
+        "[12/16] Performing functional annotation..."
+    )
 
     if ANNOTATION_METHOD.lower() == "api":
 
@@ -472,7 +887,8 @@ def main():
             REQUEST_TIMEOUT,
             MAX_RETRIES,
             REQUEST_DELAY,
-            TRANSCRIPT
+            TRANSCRIPT,
+            VEP_OUTPUT_FILE
         )
 
         save_annotation_table(
@@ -485,11 +901,13 @@ def main():
 
     elif ANNOTATION_METHOD.lower() == "web":
 
-        if not os.path.exists(VEP_OUTPUT_FILE):
+        if not os.path.exists(
+            VEP_OUTPUT_FILE
+        ):
 
             raise FileNotFoundError(
-                "ANNOTATION_METHOD is set to 'web', but the "
-                f"VEP output file was not found:\n"
+                "ANNOTATION_METHOD is set to 'web', "
+                "but the VEP output file was not found:\n"
                 f"{VEP_OUTPUT_FILE}"
             )
 
@@ -501,7 +919,9 @@ def main():
             f"      {VEP_OUTPUT_FILE}"
         )
 
-        annotation_df = None
+        annotation_df = pd.read_excel(
+            VEP_OUTPUT_FILE
+        )
 
     else:
 
@@ -510,17 +930,33 @@ def main():
             "'api' or 'web'."
         )
 
+    _require_nonempty(
+        annotation_df,
+        "annotation_df",
+        "Step 12"
+    )
+
     # =====================================================
     # 13. BUILD FINAL PUBLICATION TABLE
     # =====================================================
 
     print()
-    print("[13/16] Building final annotated variant table...")
+    print(
+        "[13/16] Building final annotated variant table..."
+    )
 
     final_df = build_final_variant_table(
         hgvs_df,
         genotype_df,
-        annotation_df
+        annotation_df,
+        confirmed_variant_df=variant_df,
+        min_phred=MIN_PHRED,
+    )
+
+    _require_nonempty(
+        final_df,
+        "final_df",
+        "Step 13"
     )
 
     final_output_folder = os.path.join(
@@ -546,7 +982,9 @@ def main():
     # =====================================================
 
     print()
-    print("[14/16] Performing variant quality control...")
+    print(
+        "[14/16] Performing variant quality control..."
+    )
 
     (
         qc_report,
@@ -578,31 +1016,64 @@ def main():
     # =====================================================
 
     print()
-    print("[15/16] Performing association analysis...")
+    print(
+        "[15/16] Performing association analysis..."
+    )
 
     phenotype_df = load_sample_groups(
         PHENOTYPE_FILE
     )
 
-    case_samples, control_samples = create_sample_sets(
+    phenotype_df = _validate_phenotype_data(
+        phenotype_df
+    )
+
+    (
+        case_samples,
+        control_samples
+    ) = create_sample_sets(
         phenotype_df
     )
 
     print(
-        f"      Case samples: {len(case_samples)}"
+        f"      Phenotype Case samples: "
+        f"{len(case_samples)}"
     )
 
     print(
-        f"      Control samples: {len(control_samples)}"
+        f"      Phenotype Control samples: "
+        f"{len(control_samples)}"
     )
+
+    # -----------------------------------------------------
+    # Association analysis uses actual genotype data.
+    #
+    # Samples without a callable genotype at a particular
+    # variant are treated as missing rather than as
+    # non-carriers. The association module therefore
+    # determines the callable denominator separately for
+    # each variant.
+    # -----------------------------------------------------
 
     association_df = run_association_analysis(
         final_df,
+        genotype_df,
         case_samples,
-        control_samples
+        control_samples,
+        min_phred=MIN_PHRED
+    )
+
+    _require_nonempty(
+        association_df,
+        "association_df",
+        "Step 15"
     )
 
     association_df = apply_multiple_testing(
+        association_df
+    )
+
+    association_df = sort_association_results(
         association_df
     )
 
@@ -623,16 +1094,33 @@ def main():
     # =====================================================
 
     print()
-    print("[16/16] Performing Hardy-Weinberg equilibrium analysis...")
+    print(
+        "[16/16] Performing Hardy-Weinberg "
+        "equilibrium analysis..."
+    )
+
+    # -----------------------------------------------------
+    # Use only high-confidence genotype calls.
+    #
+    # HWE is evaluated in controls only. The HWE module
+    # further restricts these calls to the supplied control
+    # sample set.
+    # -----------------------------------------------------
 
     control_df = prepare_control_genotypes(
-        genotype_df,
+        high_confidence_df,
         control_samples
     )
 
     hwe_df = run_hwe_analysis(
         final_df,
         control_df
+    )
+
+    _require_nonempty(
+        hwe_df,
+        "hwe_df",
+        "Step 16"
     )
 
     save_hwe_results(
@@ -656,37 +1144,61 @@ def main():
     print("PIPELINE COMPLETED SUCCESSFULLY")
     print("=" * 70)
     print()
+
     print(
-        f"ABI chromatograms loaded : {len(abi_records)}"
+        f"ABI chromatograms loaded : "
+        f"{len(abi_records)}"
     )
+
     print(
-        f"Prepared reads            : {len(processed_reads)}"
+        f"Prepared reads            : "
+        f"{len(processed_reads)}"
     )
+
     print(
-        f"Alignment records         : {len(alignment_df)}"
+        f"Alignment records         : "
+        f"{len(alignment_df)}"
     )
+
     print(
-        f"Genotype records          : {len(genotype_df)}"
+        f"Genotype records          : "
+        f"{len(genotype_df)}"
     )
+
     print(
-        f"High-confidence variants : {len(variant_df)}"
+        f"High-confidence genotypes: "
+        f"{len(high_confidence_df)}"
     )
+
     print(
-        f"Variant positions        : {len(summary_df)}"
+        f"High-confidence variants : "
+        f"{len(variant_df)}"
     )
+
     print(
-        f"HGVS records              : {len(hgvs_df)}"
+        f"Variant positions        : "
+        f"{len(summary_df)}"
     )
+
     print(
-        f"Final table records       : {len(final_df)}"
+        f"HGVS records             : "
+        f"{len(hgvs_df)}"
     )
+
+    print(
+        f"Final table records      : "
+        f"{len(final_df)}"
+    )
+
     print()
     print(
-        f"Final output:"
+        "Final output:"
     )
+
     print(
         f"{final_output_file}"
     )
+
     print()
 
 
