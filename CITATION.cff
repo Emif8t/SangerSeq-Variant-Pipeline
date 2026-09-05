@@ -1,0 +1,41 @@
+﻿cff-version: 1.2.0
+
+title: "SangerSeq Variant Pipeline"
+
+version: "1.0.0"
+
+type: software
+
+message: >
+  If you use this software in your research, please cite the
+  version-specific Zenodo record and the associated GitHub repository.
+
+authors:
+  - family-names: "Israel"
+    given-names: "Emmanuel"
+
+doi: "10.5281/zenodo.22313559"
+
+date-released: "2026-09-05"
+
+repository-code: "https://github.com/Emif8t/SangerSeq-Variant-Pipeline"
+
+url: "https://github.com/Emif8t/SangerSeq-Variant-Pipeline"
+
+license: "MIT"
+
+keywords:
+  - Sanger sequencing
+  - variant calling
+  - genomic variant analysis
+  - molecular genetics
+  - bioinformatics
+  - HGVS
+  - Ensembl VEP
+  - prostate cancer
+
+abstract: >
+  A reproducible Python pipeline for processing targeted Sanger
+  sequencing chromatograms, identifying high-confidence variants,
+  generating HGVS representations, annotating variants, and performing
+  case-control association and Hardy-Weinberg equilibrium analyses.

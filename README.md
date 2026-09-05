@@ -1,5 +1,7 @@
 # SangerSeq-Variant-Pipeline
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22313559.svg)](https://doi.org/10.5281/zenodo.22313559)
+
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
@@ -35,6 +37,22 @@ The pipeline was developed as part of doctoral research investigating **ASS1 gen
 Although the workflow is designed as a general framework for targeted Sanger sequencing analysis, the current published configuration is **ASS1-focused**.
 
 ---
+
+## DOI and Versioning
+
+The SangerSeq Variant Pipeline is archived on Zenodo to provide a
+persistent, citable record of each released software version.
+
+The version 1.0.0 release has been archived and assigned the following
+DOI:
+
+**DOI:** https://doi.org/10.5281/zenodo.22313559
+
+**Version:** 1.0.0
+
+The version-specific Zenodo record preserves the exact software release
+associated with this version. Future releases will be assigned their own
+version-specific Zenodo records through the GitHub-Zenodo integration.
 
 # Pipeline Workflow
 
@@ -742,15 +760,21 @@ Genotype-phenotype analysis
 
 The pipeline should not be considered a clinical diagnostic system without appropriate clinical validation, regulatory assessment, laboratory quality assurance, and validation according to applicable requirements.
 
-Citation
+## Citation
 
-If you use this pipeline in research, please cite:
+If you use the SangerSeq Variant Pipeline in research, please cite the
+specific software version used.
 
-Israel, E. (2026). SangerSeq-Variant-Pipeline. Version 1.0.
+### Version 1.0.0
 
-A DOI will be added following the public release of the repository through Zenodo.
+> Israel, E. (2026). *SangerSeq Variant Pipeline* (Version 1.0.0).
+> Zenodo. https://doi.org/10.5281/zenodo.22313559
 
-Once a DOI is assigned, this section will be updated with the permanent citation and DOI.
+**DOI:** https://doi.org/10.5281/zenodo.22313559
+
+The repository also includes a `CITATION.cff` file containing
+machine-readable citation metadata for use with GitHub and other
+research software citation systems.
 
 License
 
